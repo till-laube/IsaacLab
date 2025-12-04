@@ -117,6 +117,11 @@ class OpenXRDevice(DeviceBase):
         # Button binding support
         self.__button_subscriptions: dict[str, dict] = {}
 
+        # Track previous button states for edge detection
+        self._prev_left_squeeze = 0.0
+        self._prev_right_squeeze = 0.0
+        self._teleop_toggle_state = True  # Start active by default
+
         # Optional anchor synchronizer
         self._anchor_sync: XrAnchorSynchronizer | None = None
         if self._xr_core is not None and self._xr_cfg.anchor_prim_path is not None:
@@ -271,6 +276,41 @@ class OpenXRDevice(DeviceBase):
                     data[DeviceBase.TrackingTarget.CONTROLLER_LEFT] = left_ctrl
                 if right_ctrl.size:
                     data[DeviceBase.TrackingTarget.CONTROLLER_RIGHT] = right_ctrl
+
+                # Check for SQUEEZE button press to toggle teleoperation
+                # SQUEEZE is index 3 in the inputs row (row 1)
+                if left_ctrl.size > 0 and len(left_ctrl) > 1:
+                    current_left_squeeze = left_ctrl[1][3] if len(left_ctrl[1]) > 3 else 0.0
+                    # Detect rising edge (button just pressed)
+                    if current_left_squeeze > 0.5 and self._prev_left_squeeze <= 0.5:
+                        # Toggle teleoperation
+                        self._teleop_toggle_state = not self._teleop_toggle_state
+                        if self._teleop_toggle_state:
+                            if "START" in self._additional_callbacks:
+                                self._additional_callbacks["START"]()
+                                print("[OpenXR] Left SQUEEZE pressed - Teleoperation STARTED")
+                        else:
+                            if "STOP" in self._additional_callbacks:
+                                self._additional_callbacks["STOP"]()
+                                print("[OpenXR] Left SQUEEZE pressed - Teleoperation STOPPED")
+                    self._prev_left_squeeze = current_left_squeeze
+
+                if right_ctrl.size > 0 and len(right_ctrl) > 1:
+                    current_right_squeeze = right_ctrl[1][3] if len(right_ctrl[1]) > 3 else 0.0
+                    # Detect rising edge (button just pressed)
+                    if current_right_squeeze > 0.5 and self._prev_right_squeeze <= 0.5:
+                        # Toggle teleoperation
+                        self._teleop_toggle_state = not self._teleop_toggle_state
+                        if self._teleop_toggle_state:
+                            if "START" in self._additional_callbacks:
+                                self._additional_callbacks["START"]()
+                                print("[OpenXR] Right SQUEEZE pressed - Teleoperation STARTED")
+                        else:
+                            if "STOP" in self._additional_callbacks:
+                                self._additional_callbacks["STOP"]()
+                                print("[OpenXR] Right SQUEEZE pressed - Teleoperation STOPPED")
+                    self._prev_right_squeeze = current_right_squeeze
+
             except Exception:
                 # Ignore controller data if XRCore/controller APIs are unavailable
                 pass

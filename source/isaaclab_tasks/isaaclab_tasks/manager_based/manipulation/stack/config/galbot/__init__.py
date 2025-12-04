@@ -71,3 +71,15 @@ gym.register(
     },
     disable_env_checker=True,
 )
+
+##
+# Dual-Arm RMPFlow for Galbot Cube Stack Task (14 DOF: 3 pos + 3 rot + 1 gripper per arm)
+##
+gym.register(
+    id="Isaac-Stack-Cube-Galbot-Dual-Arm-RmpFlow-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.stack_rmp_dual_arm_env_cfg:RmpFlowGalbotDualArmCubeStackEnvCfg",
+    },
+    disable_env_checker=True,
+)

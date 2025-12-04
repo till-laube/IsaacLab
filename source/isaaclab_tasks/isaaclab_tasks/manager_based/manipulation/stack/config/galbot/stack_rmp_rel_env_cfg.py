@@ -9,8 +9,13 @@ import os
 import isaaclab.sim as sim_utils
 from isaaclab.devices.device_base import DeviceBase, DevicesCfg
 from isaaclab.devices.keyboard import Se3KeyboardCfg
+from isaaclab.devices.openxr import XrCfg
 from isaaclab.devices.openxr.openxr_device import OpenXRDeviceCfg
-from isaaclab.devices.openxr.retargeters import GripperRetargeterCfg, Se3RelRetargeterCfg
+from isaaclab.devices.openxr.retargeters import (
+    GripperRetargeterCfg,
+    Se3RelRetargeterCfg,
+    ViveControllerSe3RetargeterCfg,
+)
 from isaaclab.devices.spacemouse import Se3SpaceMouseCfg
 from isaaclab.envs.mdp.actions.rmpflow_actions_cfg import RMPFlowActionCfg
 from isaaclab.sensors import CameraCfg, FrameTransformerCfg
@@ -65,6 +70,12 @@ class RmpFlowGalbotLeftArmCubeStackEnvCfg(stack_joint_pos_env_cfg.GalbotLeftArmC
         self.decimation = 3
         self.episode_length_s = 30.0
 
+        # Override XR anchor position to be at head height for VR
+        self.xr = XrCfg(
+            anchor_pos=(-0.2, 0.1, 0.0),  # Raise camera to ~1.6m height
+            anchor_rot=(1.0, 0.0, 0.0, 0.0),  # No rotation
+        )
+
         self.teleop_devices = DevicesCfg(
             devices={
                 "keyboard": Se3KeyboardCfg(
@@ -76,6 +87,17 @@ class RmpFlowGalbotLeftArmCubeStackEnvCfg(stack_joint_pos_env_cfg.GalbotLeftArmC
                     pos_sensitivity=0.05,
                     rot_sensitivity=0.05,
                     sim_device=self.sim.device,
+                ),
+                "vive": OpenXRDeviceCfg(
+                    retargeters=[
+                        ViveControllerSe3RetargeterCfg(
+                            hand_side="left",
+                            pos_sensitivity=10.0,
+                            rot_sensitivity=10.0,
+                        ),
+                    ],
+                    sim_device=self.sim.device,
+                    xr_cfg=self.xr,
                 ),
                 "handtracking": OpenXRDeviceCfg(
                     retargeters=[

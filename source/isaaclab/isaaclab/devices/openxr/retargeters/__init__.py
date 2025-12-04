@@ -22,3 +22,9 @@ from .humanoid.unitree.trihand.g1_upper_body_retargeter import (
 from .manipulator.gripper_retargeter import GripperRetargeter, GripperRetargeterCfg
 from .manipulator.se3_abs_retargeter import Se3AbsRetargeter, Se3AbsRetargeterCfg
 from .manipulator.se3_rel_retargeter import Se3RelRetargeter, Se3RelRetargeterCfg
+from .manipulator.vive_controller_retargeter import (
+    ViveControllerSe3Retargeter,
+    ViveControllerSe3RetargeterCfg,
+    ViveControllerDualArmRetargeter,
+    ViveControllerDualArmRetargeterCfg,
+)

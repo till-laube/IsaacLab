@@ -28,3 +28,4 @@ from .openxr import ManusVive, ManusViveCfg, OpenXRDevice, OpenXRDeviceCfg
 from .retargeter_base import RetargeterBase, RetargeterCfg
 from .spacemouse import Se2SpaceMouse, Se2SpaceMouseCfg, Se3SpaceMouse, Se3SpaceMouseCfg
 from .teleop_device_factory import create_teleop_device
+from .vive import Se3ViveController, Se3ViveControllerCfg

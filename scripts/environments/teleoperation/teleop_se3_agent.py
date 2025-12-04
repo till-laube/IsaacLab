@@ -49,7 +49,7 @@ if args_cli.enable_pinocchio:
     # not the one installed by Isaac Sim pinocchio is required by the Pink IK controllers and the
     # GR1T2 retargeter
     import pinocchio  # noqa: F401
-if "handtracking" in args_cli.teleop_device.lower():
+if "handtracking" in args_cli.teleop_device.lower() or "vive" in args_cli.teleop_device.lower():
     app_launcher_args["xr"] = True
 
 # launch omniverse app
@@ -63,7 +63,8 @@ import gymnasium as gym
 import logging
 import torch
 
-from isaaclab.devices import Se3Gamepad, Se3GamepadCfg, Se3Keyboard, Se3KeyboardCfg, Se3SpaceMouse, Se3SpaceMouseCfg
+from isaaclab.devices import Se3Gamepad, Se3GamepadCfg, Se3Keyboard, Se3KeyboardCfg, Se3SpaceMouse, Se3SpaceMouseCfg, Se3ViveController
+from isaaclab.devices.vive import Se3ViveControllerCfg
 from isaaclab.devices.openxr import remove_camera_configs
 from isaaclab.devices.teleop_device_factory import create_teleop_device
 from isaaclab.managers import TerminationTermCfg as DoneTerm
@@ -173,8 +174,12 @@ def main() -> None:
 
     # For hand tracking devices, add additional callbacks
     if args_cli.xr:
-        # Default to inactive for hand tracking
-        teleoperation_active = False
+        # Default to inactive for hand tracking, but active for motion controllers (vive)
+        if "vive" in args_cli.teleop_device.lower():
+            teleoperation_active = True
+            print("Vive controller teleoperation active by default")
+        else:
+            teleoperation_active = False
     else:
         # Always active for other devices
         teleoperation_active = True
@@ -203,6 +208,10 @@ def main() -> None:
             elif args_cli.teleop_device.lower() == "gamepad":
                 teleop_interface = Se3Gamepad(
                     Se3GamepadCfg(pos_sensitivity=0.1 * sensitivity, rot_sensitivity=0.1 * sensitivity)
+                )
+            elif args_cli.teleop_device.lower() == "vive":
+                teleop_interface = Se3ViveController(
+                    Se3ViveControllerCfg(pos_sensitivity=0.1 * sensitivity, rot_sensitivity=0.1 * sensitivity)
                 )
             else:
                 logger.error(f"Unsupported teleop device: {args_cli.teleop_device}")
