@@ -92,8 +92,8 @@ class RmpFlowGalbotLeftArmCubeStackEnvCfg(stack_joint_pos_env_cfg.GalbotLeftArmC
                     retargeters=[
                         ViveControllerSe3RetargeterCfg(
                             hand_side="left",
-                            pos_sensitivity=10.0,
-                            rot_sensitivity=10.0,
+                            pos_sensitivity=5.0,
+                            rot_sensitivity=5.0,
                         ),
                     ],
                     sim_device=self.sim.device,

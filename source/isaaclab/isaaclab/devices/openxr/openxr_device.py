@@ -120,7 +120,7 @@ class OpenXRDevice(DeviceBase):
         # Track previous button states for edge detection
         self._prev_left_squeeze = 0.0
         self._prev_right_squeeze = 0.0
-        self._teleop_toggle_state = True  # Start active by default
+        self._teleop_toggle_state = False  # Start inactive - activate with SQUEEZE button
 
         # Optional anchor synchronizer
         self._anchor_sync: XrAnchorSynchronizer | None = None

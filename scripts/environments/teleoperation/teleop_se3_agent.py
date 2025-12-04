@@ -174,12 +174,9 @@ def main() -> None:
 
     # For hand tracking devices, add additional callbacks
     if args_cli.xr:
-        # Default to inactive for hand tracking, but active for motion controllers (vive)
-        if "vive" in args_cli.teleop_device.lower():
-            teleoperation_active = True
-            print("Vive controller teleoperation active by default")
-        else:
-            teleoperation_active = False
+        # Default to inactive for XR devices - activate by pressing SQUEEZE button
+        teleoperation_active = False
+        print("Teleoperation inactive - press SQUEEZE button on controller to activate")
     else:
         # Always active for other devices
         teleoperation_active = True
