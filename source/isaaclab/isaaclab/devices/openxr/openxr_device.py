@@ -228,6 +228,11 @@ class OpenXRDevice(DeviceBase):
         if hasattr(self, "_anchor_sync") and self._anchor_sync is not None:
             self._anchor_sync.reset()
 
+        # Reset all retargeters to clear their internal state (e.g., previous pose tracking)
+        for retargeter in self._retargeters:
+            if hasattr(retargeter, "reset"):
+                retargeter.reset()
+
     def add_callback(self, key: str, func: Callable):
         """Add additional functions to bind to client messages.
 

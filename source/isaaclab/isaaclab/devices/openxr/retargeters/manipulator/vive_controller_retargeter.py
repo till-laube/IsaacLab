@@ -42,9 +42,6 @@ class ViveControllerSe3Retargeter(RetargeterBase):
         self._prev_position = None
         self._prev_quaternion = None
 
-        # Debug: print sensitivity values
-        print(f"[ViveRetargeter] Initialized with pos_sensitivity={self._pos_sensitivity}, rot_sensitivity={self._rot_sensitivity}")
-
     def get_requirements(self) -> list[RetargeterBase.Requirement]:
         """Return required data features for this retargeter."""
         return [RetargeterBase.Requirement.MOTION_CONTROLLER]
@@ -67,16 +64,6 @@ class ViveControllerSe3Retargeter(RetargeterBase):
 
         # Get controller data
         controller_data = device_output.get(controller_key, np.array([]))
-
-        # Debug output
-        if len(device_output) > 0:
-            print(f"[ViveRetargeter] Device output keys: {list(device_output.keys())}")
-            if len(controller_data) > 0:
-                print(f"[ViveRetargeter] Controller data shape: {controller_data.shape}")
-                if len(controller_data) > 0:
-                    print(f"[ViveRetargeter] Controller pose: {controller_data[0][:3] if len(controller_data) > 0 else 'N/A'}")
-            else:
-                print(f"[ViveRetargeter] WARNING: No data for {self._hand_side} controller!")
 
         # Default output if no controller data
         default_output = np.zeros(7)
@@ -123,9 +110,6 @@ class ViveControllerSe3Retargeter(RetargeterBase):
             rotation_delta_raw = rot_delta.as_rotvec()
             rotation_delta = rotation_delta_raw * self._rot_sensitivity
 
-            # Debug output
-            print(f"[ViveRetargeter] Raw delta - pos: {position_delta_raw}, sensitivity: {self._pos_sensitivity}, final: {position_delta}")
-
             # Update previous pose
             self._prev_position = current_position.copy()
             self._prev_quaternion = current_quaternion.copy()
@@ -144,9 +128,6 @@ class ViveControllerSe3Retargeter(RetargeterBase):
 
         # Combine into Se3 format
         output = np.concatenate([position, rotation_vector, [gripper]])
-
-        # Debug output
-        print(f"[ViveRetargeter] Output DELTA - pos: {position}, rot: {rotation_vector}, gripper: {gripper}")
 
         return torch.tensor(output, dtype=torch.float32)
 
@@ -173,6 +154,8 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
     """Retargeter that converts both HTC Vive Elite XR controllers to dual-arm Se3 commands.
 
     Outputs 14 DOF: [left_pos(3), left_rot(3), left_grip(1), right_pos(3), right_rot(3), right_grip(1)]
+
+    This retargeter computes DELTA movements for use with relative mode RMPFlow.
     """
 
     cfg: "ViveControllerDualArmRetargeterCfg"
@@ -183,30 +166,102 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
         self._rot_sensitivity = cfg.rot_sensitivity
         self._trigger_threshold = cfg.trigger_threshold
 
+        # Track previous poses for computing deltas (for relative mode)
+        self._prev_left_position = None
+        self._prev_left_quaternion = None
+        self._prev_right_position = None
+        self._prev_right_quaternion = None
+
     def get_requirements(self) -> list[RetargeterBase.Requirement]:
         """Return required data features for this retargeter."""
         return [RetargeterBase.Requirement.MOTION_CONTROLLER]
 
-    def _process_controller(self, controller_data: np.ndarray) -> np.ndarray:
-        """Process single controller data to Se3 format (7 elements)."""
+    def reset(self):
+        """Reset the retargeter state.
+
+        This clears the previous pose tracking, which is important when:
+        - XR mode is activated/deactivated
+        - The coordinate system changes
+        - The user resets the environment
+        """
+        self._prev_left_position = None
+        self._prev_left_quaternion = None
+        self._prev_right_position = None
+        self._prev_right_quaternion = None
+        # print("[DualArmRetargeter] Reset - cleared previous pose tracking")
+
+    def _process_controller(
+        self, controller_data: np.ndarray, prev_position, prev_quaternion, is_left: bool
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Process single controller data to Se3 DELTA format (7 elements).
+
+        Args:
+            controller_data: Raw controller data from OpenXR
+            prev_position: Previous position for delta computation (or None for first frame)
+            prev_quaternion: Previous quaternion for delta computation (or None for first frame)
+            is_left: Whether this is the left controller (for debug output)
+
+        Returns:
+            Tuple of (output_array, new_position, new_quaternion)
+        """
         default_output = np.zeros(7)
         default_output[6] = -1.0  # Gripper open
 
         if len(controller_data) == 0 or len(controller_data) <= DeviceBase.MotionControllerDataRowIndex.POSE.value:
-            return default_output
+            return default_output, prev_position, prev_quaternion
 
         pose = controller_data[DeviceBase.MotionControllerDataRowIndex.POSE.value]
         if len(pose) < 7:
-            return default_output
+            return default_output, prev_position, prev_quaternion
 
-        # Position
-        position = pose[:3] * self._pos_sensitivity
+        # Extract current position and quaternion
+        current_position = pose[:3]
+        current_quaternion = pose[3:7]  # [qw, qx, qy, qz]
 
-        # Quaternion to rotation vector
-        quaternion = pose[3:7]
-        quat_scipy = np.array([quaternion[1], quaternion[2], quaternion[3], quaternion[0]])
-        rot = Rotation.from_quat(quat_scipy)
-        rotation_vector = rot.as_rotvec() * self._rot_sensitivity
+        # Debug: Print actual controller position
+        # side = "LEFT" if is_left else "RIGHT"
+        # print(f"[DualArmRetargeter {side}] Current position: {current_position}, quat: {current_quaternion}")
+        # if prev_position is not None:
+        #     print(f"[DualArmRetargeter {side}] Previous position: {prev_position}")
+
+        # Compute deltas for relative mode
+        if prev_position is None:
+            # First frame: initialize with current pose, output zero delta
+            position_delta = np.zeros(3)
+            rotation_delta = np.zeros(3)
+        else:
+            # Compute position delta
+            position_delta_raw = current_position - prev_position
+            position_delta = position_delta_raw * self._pos_sensitivity
+
+            # Compute rotation delta
+            # Convert quaternions to rotations
+            quat_prev_scipy = np.array(
+                [prev_quaternion[1], prev_quaternion[2], prev_quaternion[3], prev_quaternion[0]]
+            )
+            quat_curr_scipy = np.array(
+                [current_quaternion[1], current_quaternion[2], current_quaternion[3], current_quaternion[0]]
+            )
+            rot_prev = Rotation.from_quat(quat_prev_scipy)
+            rot_curr = Rotation.from_quat(quat_curr_scipy)
+
+            # Compute relative rotation (delta)
+            rot_delta = rot_curr * rot_prev.inv()
+            rotation_delta_raw = rot_delta.as_rotvec()
+            rotation_delta = rotation_delta_raw * self._rot_sensitivity
+
+        # Apply deadband to filter noise - ignore tiny deltas below threshold
+        # This prevents drift from tracking noise when controllers are stationary
+        # TODO: add deadband filter later on, when tracking is working properly
+        # pos_deadband = 0.0005  # 0.5mm threshold
+        # rot_deadband = 0.005   # ~0.3 degree threshold
+
+        # Zero out deltas below deadband
+        # position_delta = np.where(np.abs(position_delta) < pos_deadband, 0.0, position_delta)
+        # rotation_delta = np.where(np.abs(rotation_delta) < rot_deadband, 0.0, rotation_delta)
+
+        position = position_delta
+        rotation_vector = rotation_delta
 
         # Gripper from trigger
         gripper = -1.0
@@ -216,22 +271,35 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
                 trigger_value = inputs[DeviceBase.MotionControllerInputIndex.TRIGGER.value]
                 gripper = 1.0 if trigger_value > self._trigger_threshold else -1.0
 
-        return np.concatenate([position, rotation_vector, [gripper]])
+        output = np.concatenate([position, rotation_vector, [gripper]])
+        return output, current_position.copy(), current_quaternion.copy()
 
     def retarget(self, device_output: dict) -> torch.Tensor:
-        """Retarget both controllers to dual-arm Se3 commands.
+        """Retarget both controllers to dual-arm Se3 DELTA commands.
 
         Args:
             device_output: Dictionary with CONTROLLER_LEFT and CONTROLLER_RIGHT
 
         Returns:
-            Tensor: [left(7), right(7)] = 14 elements
+            Tensor: [left_delta(7), right_delta(7)] = 14 elements
+                   where each 7-element block is [pos_delta(3), rot_delta(3), gripper(1)]
         """
         left_data = device_output.get(DeviceBase.TrackingTarget.CONTROLLER_LEFT, np.array([]))
         right_data = device_output.get(DeviceBase.TrackingTarget.CONTROLLER_RIGHT, np.array([]))
 
-        left_output = self._process_controller(left_data)
-        right_output = self._process_controller(right_data)
+        # Process left controller and update tracking
+        left_output, new_left_pos, new_left_quat = self._process_controller(
+            left_data, self._prev_left_position, self._prev_left_quaternion, is_left=True
+        )
+        self._prev_left_position = new_left_pos
+        self._prev_left_quaternion = new_left_quat
+
+        # Process right controller and update tracking
+        right_output, new_right_pos, new_right_quat = self._process_controller(
+            right_data, self._prev_right_position, self._prev_right_quaternion, is_left=False
+        )
+        self._prev_right_position = new_right_pos
+        self._prev_right_quaternion = new_right_quat
 
         output = np.concatenate([left_output, right_output])
         return torch.tensor(output, dtype=torch.float32)
