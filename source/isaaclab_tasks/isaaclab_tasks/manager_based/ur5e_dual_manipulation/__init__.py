@@ -15,7 +15,7 @@ from . import agents
 
 gym.register(
     id="Isaac-Ur5e-Dual-Manipulation-v0",
-    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    entry_point=f"{__name__}.ur5e_dual_manipulation_env:Ur5eDualManipulationEnv",
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": f"{__name__}.ur5e_dual_manipulation_env_cfg:Ur5eDualManipulationEnvCfg",
@@ -26,7 +26,7 @@ gym.register(
 # Alias for convenience
 gym.register(
     id="Isaac-Ur5e-Dual-v0",
-    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    entry_point=f"{__name__}.ur5e_dual_manipulation_env:Ur5eDualManipulationEnv",
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": f"{__name__}.ur5e_dual_manipulation_env_cfg:Ur5eDualManipulationEnvCfg",
