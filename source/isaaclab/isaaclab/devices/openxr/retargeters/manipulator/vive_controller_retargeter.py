@@ -166,6 +166,17 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
         self._rot_sensitivity = cfg.rot_sensitivity
         self._trigger_threshold = cfg.trigger_threshold
 
+        # Store base rotations for coordinate transformation
+        # Convert from [w,x,y,z] to scipy format [x,y,z,w] and create rotation objects
+        left_quat_scipy = [cfg.left_base_quat[1], cfg.left_base_quat[2], cfg.left_base_quat[3], cfg.left_base_quat[0]]
+        right_quat_scipy = [cfg.right_base_quat[1], cfg.right_base_quat[2], cfg.right_base_quat[3], cfg.right_base_quat[0]]
+        self._left_base_rot = Rotation.from_quat(left_quat_scipy)
+        self._right_base_rot = Rotation.from_quat(right_quat_scipy)
+
+        # Inverse rotations for world→base transformation
+        self._left_world_to_base = self._left_base_rot.inv()
+        self._right_world_to_base = self._right_base_rot.inv()
+
         # Track previous poses for computing deltas (for relative mode)
         self._prev_left_position = None
         self._prev_left_quaternion = None
@@ -191,7 +202,7 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
         # print("[DualArmRetargeter] Reset - cleared previous pose tracking")
 
     def _process_controller(
-        self, controller_data: np.ndarray, prev_position, prev_quaternion, is_left: bool
+        self, controller_data: np.ndarray, prev_position, prev_quaternion, is_left: bool, world_to_base: Rotation
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Process single controller data to Se3 DELTA format (7 elements).
 
@@ -200,6 +211,7 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
             prev_position: Previous position for delta computation (or None for first frame)
             prev_quaternion: Previous quaternion for delta computation (or None for first frame)
             is_left: Whether this is the left controller (for debug output)
+            world_to_base: Rotation object to transform deltas from world to arm base frame
 
         Returns:
             Tuple of (output_array, new_position, new_quaternion)
@@ -250,6 +262,11 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
             rotation_delta_raw = rot_delta.as_rotvec()
             rotation_delta = rotation_delta_raw * self._rot_sensitivity
 
+            # Transform deltas from world frame to arm base frame
+            # This is crucial for arms with rotated bases (e.g., ±45° angled mounts)
+            position_delta = world_to_base.apply(position_delta)
+            rotation_delta = world_to_base.apply(rotation_delta)
+
         # Apply deadband to filter noise - ignore tiny deltas below threshold
         # This prevents drift from tracking noise when controllers are stationary
         # TODO: add deadband filter later on, when tracking is working properly
@@ -288,15 +305,19 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
         right_data = device_output.get(DeviceBase.TrackingTarget.CONTROLLER_RIGHT, np.array([]))
 
         # Process left controller and update tracking
+        # Pass left arm's world_to_base transformation
         left_output, new_left_pos, new_left_quat = self._process_controller(
-            left_data, self._prev_left_position, self._prev_left_quaternion, is_left=True
+            left_data, self._prev_left_position, self._prev_left_quaternion, is_left=True,
+            world_to_base=self._left_world_to_base
         )
         self._prev_left_position = new_left_pos
         self._prev_left_quaternion = new_left_quat
 
         # Process right controller and update tracking
+        # Pass right arm's world_to_base transformation
         right_output, new_right_pos, new_right_quat = self._process_controller(
-            right_data, self._prev_right_position, self._prev_right_quaternion, is_left=False
+            right_data, self._prev_right_position, self._prev_right_quaternion, is_left=False,
+            world_to_base=self._right_world_to_base
         )
         self._prev_right_position = new_right_pos
         self._prev_right_quaternion = new_right_quat
@@ -307,9 +328,16 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
 
 @configclass
 class ViveControllerDualArmRetargeterCfg(RetargeterCfg):
-    """Configuration for dual-arm Vive controller retargeter."""
+    """Configuration for dual-arm Vive controller retargeter.
+
+    Args:
+        left_base_quat: Quaternion [w,x,y,z] of left arm base rotation (world frame)
+        right_base_quat: Quaternion [w,x,y,z] of right arm base rotation (world frame)
+    """
 
     retargeter_type: type = ViveControllerDualArmRetargeter
     pos_sensitivity: float = 1.0
     rot_sensitivity: float = 1.0
     trigger_threshold: float = 0.5
+    left_base_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)  # Identity by default
+    right_base_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)  # Identity by default
