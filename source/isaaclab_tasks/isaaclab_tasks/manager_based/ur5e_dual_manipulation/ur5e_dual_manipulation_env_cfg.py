@@ -631,9 +631,21 @@ class Ur5eDualManipulationEnvCfg(ManagerBasedRLEnvCfg):
         #   - "delta": Use relative/delta rotations (default) - controller movements are
         #              converted to incremental changes applied to the current gripper pose
         #   - "absolute": Use absolute orientation tracking - controller orientation is
-        #                 directly mapped to gripper orientation (not yet implemented)
+        #                 directly mapped to gripper orientation
         #
         # The tracking_mode can be overridden via CLI using --tracking_mode argument
+        #
+        # Controller-to-gripper rotation offsets (for absolute mode):
+        #   These quaternions [w,x,y,z] align the controller's coordinate frame with the
+        #   gripper's coordinate frame. Adjust these if the gripper orientation doesn't
+        #   match how you hold the controller.
+        #   - Identity (1,0,0,0): No offset
+        #   - 90° around X: (0.707, 0.707, 0, 0)
+        #   - 90° around Y: (0.707, 0, 0.707, 0)
+        #   - 90° around Z: (0.707, 0, 0, 0.707)
+        #   - 180° around X: (0, 1, 0, 0)
+        #   - 180° around Y: (0, 0, 1, 0)
+        #   - 180° around Z: (0, 0, 0, 1)
         self.teleop_devices = DevicesCfg(
             devices={
                 "vive": OpenXRDeviceCfg(
@@ -641,13 +653,21 @@ class Ur5eDualManipulationEnvCfg(ManagerBasedRLEnvCfg):
                         ViveControllerDualArmRetargeterCfg(
                             tracking_mode="delta",  # "delta" or "absolute"
                             pos_sensitivity=5.0,  # Position movement sensitivity
-                            rot_sensitivity=5.0,  # Rotation sensitivity
+                            rot_sensitivity=5.0,  # Rotation sensitivity (used in delta mode only)
                             trigger_threshold=0.5,  # Trigger threshold for gripper close
                             # Arm base rotations for coordinate transformation
                             # Left: (180°, -45°, 90°) in XYZ Euler
                             left_base_quat=(-0.270523, 0.653339, 0.653251, 0.270609),
                             # Right: (180°, 45°, 90°) in XYZ Euler
                             right_base_quat=(0.270583, 0.653314, 0.653276, -0.270549),
+                            # Controller-to-gripper rotation offsets (for absolute mode)
+                            # Adjust these to align controller axes with gripper axes
+                            # Format: [w, x, y, z] quaternion
+                            left_controller_to_gripper_rot=(1.0, 0.0, 0.0, 0.0),  # Identity (no offset)
+                            right_controller_to_gripper_rot=(1.0, 0.0, 0.0, 0.0),  # Identity (no offset)
+                            # Scale compensation for absolute mode: 1.0 / RMPFlowActionCfg.scale
+                            # RMPFlowActionCfg.scale = 5.0, so this should be 0.2
+                            absolute_mode_rot_scale=0.2,
                         ),
                     ],
                     sim_device=self.sim.device,  # Use same device as simulation

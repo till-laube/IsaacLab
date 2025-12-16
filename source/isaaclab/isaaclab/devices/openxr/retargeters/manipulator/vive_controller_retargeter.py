@@ -173,6 +173,24 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
         - The reset() method is called (e.g., when environment resets)
         - Teleoperation is reactivated after being deactivated
 
+    **Controller-to-Gripper Alignment** (absolute mode only):
+        The controller's coordinate frame (e.g., Z-axis along controller body) may not match
+        the gripper's coordinate frame (e.g., Z-axis along gripper fingers). The config
+        parameters `left_controller_to_gripper_rot` and `right_controller_to_gripper_rot`
+        define rotation offsets (as quaternions [w,x,y,z]) to align these frames.
+
+        To find the correct offset:
+        1. Start with identity (1,0,0,0)
+        2. Hold the controller in a natural position
+        3. Observe the gripper orientation mismatch
+        4. Apply rotations (e.g., 90° around X/Y/Z) until aligned
+
+        Common offsets:
+        - 90° around X: (0.707, 0.707, 0, 0)
+        - 90° around Y: (0.707, 0, 0.707, 0)
+        - 90° around Z: (0.707, 0, 0, 0.707)
+        - 180° around Z: (0, 0, 0, 1)
+
     Position tracking uses delta mode in both cases (gripper position follows controller
     movement deltas, not absolute position).
     """
@@ -196,6 +214,7 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
         self._pos_sensitivity = cfg.pos_sensitivity
         self._rot_sensitivity = cfg.rot_sensitivity
         self._trigger_threshold = cfg.trigger_threshold
+        self._absolute_mode_rot_scale = cfg.absolute_mode_rot_scale
 
         # Store base rotations for coordinate transformation
         # Convert from [w,x,y,z] to scipy format [x,y,z,w] and create rotation objects
@@ -208,6 +227,19 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
         self._left_world_to_base = self._left_base_rot.inv()
         self._right_world_to_base = self._right_base_rot.inv()
 
+        # Controller-to-gripper rotation offsets (for absolute tracking mode)
+        # These align the controller's coordinate frame with the gripper's coordinate frame
+        left_c2g_scipy = [
+            cfg.left_controller_to_gripper_rot[1], cfg.left_controller_to_gripper_rot[2],
+            cfg.left_controller_to_gripper_rot[3], cfg.left_controller_to_gripper_rot[0]
+        ]
+        right_c2g_scipy = [
+            cfg.right_controller_to_gripper_rot[1], cfg.right_controller_to_gripper_rot[2],
+            cfg.right_controller_to_gripper_rot[3], cfg.right_controller_to_gripper_rot[0]
+        ]
+        self._left_controller_to_gripper = Rotation.from_quat(left_c2g_scipy)
+        self._right_controller_to_gripper = Rotation.from_quat(right_c2g_scipy)
+
         # Track previous poses for computing deltas (used in delta mode)
         self._prev_left_position = None
         self._prev_left_quaternion = None
@@ -218,8 +250,8 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
         # These store the controller orientation at calibration time (first valid frame)
         self._left_calibration_quat = None  # Controller orientation at calibration [w,x,y,z]
         self._right_calibration_quat = None
-        # These store the previous target rotation in base frame (to compute incremental deltas)
-        self._left_prev_target_rot = None  # scipy Rotation object
+        # These store the previous target rotation vector in base frame (to compute incremental deltas)
+        self._left_prev_target_rot = None  # numpy array [3] - rotation vector
         self._right_prev_target_rot = None
 
     @property
@@ -362,13 +394,12 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
         In absolute mode, the gripper orientation tracks the controller's orientation
         relative to a calibration reference (established on the first valid frame).
 
-        Key differences from delta mode:
-        - Delta mode: Outputs rotation change between current and previous frame
-        - Absolute mode: Outputs rotation to reach target orientation based on controller's
-                        absolute orientation relative to calibration
-
-        This eliminates orientation drift and ensures consistent mapping between
-        controller and gripper orientation throughout the teleoperation session.
+        The approach:
+        1. Compute controller rotation from calibration (in world frame)
+        2. Apply controller-to-gripper offset to align coordinate frames
+        3. Convert to rotation vector and transform to base frame (same as delta mode)
+        4. Compute incremental delta from previous output
+        5. Output the delta (which gets accumulated by RMPFlow)
 
         Args:
             controller_data: Raw controller data from OpenXR
@@ -389,13 +420,15 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
         if current_position is None:
             return default_output, prev_position, prev_quaternion
 
-        # Get calibration and target state for this arm
+        # Get calibration, target state, and controller-to-gripper offset for this arm
         if is_left:
             calibration_quat = self._left_calibration_quat
-            prev_target_rot = self._left_prev_target_rot
+            prev_target_rotvec = self._left_prev_target_rot  # Now stores rotvec, not Rotation
+            controller_to_gripper = self._left_controller_to_gripper
         else:
             calibration_quat = self._right_calibration_quat
-            prev_target_rot = self._right_prev_target_rot
+            prev_target_rotvec = self._right_prev_target_rot
+            controller_to_gripper = self._right_controller_to_gripper
 
         # === POSITION: Use delta tracking (same as delta mode) ===
         if prev_position is None:
@@ -409,23 +442,19 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
         # === ORIENTATION: Absolute tracking ===
         if calibration_quat is None:
             # First frame: establish calibration reference
-            # Store the controller's current orientation as the calibration reference
             calibration_quat = current_quaternion.copy()
-
-            # Initialize target rotation to identity (gripper starts at its current orientation)
-            prev_target_rot = Rotation.identity()
+            prev_target_rotvec = np.zeros(3)  # Start with zero rotation from initial orientation
 
             # Store calibration state
             if is_left:
                 self._left_calibration_quat = calibration_quat
-                self._left_prev_target_rot = prev_target_rot
+                self._left_prev_target_rot = prev_target_rotvec
                 print(f"[DualArmRetargeter] LEFT arm calibrated - controller orientation captured")
             else:
                 self._right_calibration_quat = calibration_quat
-                self._right_prev_target_rot = prev_target_rot
+                self._right_prev_target_rot = prev_target_rotvec
                 print(f"[DualArmRetargeter] RIGHT arm calibrated - controller orientation captured")
 
-            # Output zero rotation for calibration frame
             rotation_delta = np.zeros(3)
         else:
             # Subsequent frames: compute absolute orientation tracking
@@ -442,26 +471,30 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
             rot_curr = Rotation.from_quat(curr_quat_scipy)
 
             # Compute how much the controller has rotated FROM calibration TO current
-            # This represents the rotation the user has applied since calibration
             controller_rot_from_calib = rot_curr * rot_calib.inv()
 
-            # Transform this rotation to the arm's base frame
-            # A rotation R in world frame becomes: world_to_base * R * world_to_base.inv()
-            # when expressed in the base frame (rotation conjugation)
-            target_rot_base = world_to_base * controller_rot_from_calib * world_to_base.inv()
+            # Apply controller-to-gripper offset to align coordinate frames
+            aligned_rot = controller_rot_from_calib * controller_to_gripper
 
-            # Compute the incremental delta from previous target to new target
-            # This is what we output so that apply_delta_pose moves toward the target
-            delta_rot = target_rot_base * prev_target_rot.inv()
+            # Convert to rotation vector (in world frame)
+            target_rotvec_world = aligned_rot.as_rotvec()
 
-            # Convert to rotation vector and apply sensitivity
-            rotation_delta = delta_rot.as_rotvec() * self._rot_sensitivity
+            # Transform rotation vector to base frame (same approach as delta mode)
+            # This rotates the axis of the rotation to be expressed in base frame
+            target_rotvec_base = world_to_base.apply(target_rotvec_world)
 
-            # Store the new target for next frame
+            # Compute the delta from what we previously output to what we want now
+            # This ensures the accumulated rotation matches the target
+            rotation_delta_raw = target_rotvec_base - prev_target_rotvec
+
+            # Apply scale compensation (to counteract RMPFlowAction.scale)
+            rotation_delta = rotation_delta_raw * self._absolute_mode_rot_scale
+
+            # Store the target rotvec for next frame (NOT scaled, this is what we're tracking)
             if is_left:
-                self._left_prev_target_rot = target_rot_base
+                self._left_prev_target_rot = target_rotvec_base
             else:
-                self._right_prev_target_rot = target_rot_base
+                self._right_prev_target_rot = target_rotvec_base
 
         output = np.concatenate([position_delta, rotation_delta, [gripper]])
         return output, current_position.copy(), current_quaternion.copy()
@@ -540,6 +573,11 @@ class ViveControllerDualArmRetargeterCfg(RetargeterCfg):
             - "absolute": Use absolute orientation tracking (controller orientation maps to gripper orientation)
         left_base_quat: Quaternion [w,x,y,z] of left arm base rotation (world frame)
         right_base_quat: Quaternion [w,x,y,z] of right arm base rotation (world frame)
+        left_controller_to_gripper_rot: Quaternion [w,x,y,z] rotation offset from left controller
+            coordinate frame to desired gripper coordinate frame. This aligns the controller's
+            axes (e.g., Z-forward) with the gripper's axes. Applied in absolute tracking mode.
+        right_controller_to_gripper_rot: Quaternion [w,x,y,z] rotation offset from right controller
+            coordinate frame to desired gripper coordinate frame.
     """
 
     retargeter_type: type = ViveControllerDualArmRetargeter
@@ -549,3 +587,11 @@ class ViveControllerDualArmRetargeterCfg(RetargeterCfg):
     trigger_threshold: float = 0.5
     left_base_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)  # Identity by default
     right_base_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)  # Identity by default
+    # Controller-to-gripper rotation offsets (identity by default = no offset)
+    # These align the controller's coordinate frame with the gripper's coordinate frame
+    left_controller_to_gripper_rot: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)
+    right_controller_to_gripper_rot: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)
+    # Scale compensation for absolute mode (to counteract RMPFlowAction scale)
+    # Set this to 1.0 / RMPFlowActionCfg.scale for correct 1:1 orientation tracking
+    # Example: If RMPFlowActionCfg.scale = 5.0, set this to 0.2
+    absolute_mode_rot_scale: float = 1.0
