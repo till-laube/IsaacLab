@@ -120,6 +120,27 @@ class RmpFlowGalbotLeftArmCubeStackEnvCfg(stack_joint_pos_env_cfg.GalbotLeftArmC
             }
         )
 
+        # Add control point visualization
+        marker_left_control_cfg = FRAME_MARKER_CFG.copy()
+        marker_left_control_cfg.markers["frame"].scale = (0.05, 0.05, 0.05)  # Small markers
+        marker_left_control_cfg.prim_path = "/Visuals/FrameTransformerLeftControl"
+
+        self.scene.left_control_frame = FrameTransformerCfg(
+            prim_path="{ENV_REGEX_NS}/Robot/base_link",
+            debug_vis=True,
+            visualizer_cfg=marker_left_control_cfg,
+            target_frames=[
+                FrameTransformerCfg.FrameCfg(
+                    prim_path="{ENV_REGEX_NS}/Robot/left_gripper_tcp_link",
+                    name="left_control_point",
+                    offset=OffsetCfg(
+                        pos=(0.0, 0.0, 0.0),
+                        rot=(0.0, 0, 0.0, 0),
+                    ),
+                ),
+            ],
+        )
+
 
 ##
 # RmpFlow Controller for Galbot Right Arm Cube Stack Task (with Surface Gripper)
@@ -298,6 +319,27 @@ class RmpFlowGalbotLeftArmCubeStackVisuomotorEnvCfg(RmpFlowGalbotLeftArmCubeStac
 
         # List of image observations in policy observations
         self.image_obs_list = ["ego_cam", "left_wrist_cam", "right_wrist_cam"]
+
+        # Control point visualization for left gripper
+        marker_left_ee_cfg = FRAME_MARKER_CFG.copy()
+        marker_left_ee_cfg.markers["frame"].scale = (0.05, 0.05, 0.05)  # Small markers
+        marker_left_ee_cfg.prim_path = "/Visuals/FrameTransformerLeftEE"
+
+        self.scene.left_ee_frame = FrameTransformerCfg(
+            prim_path="{ENV_REGEX_NS}/Robot/base_link",
+            debug_vis=True,
+            visualizer_cfg=marker_left_ee_cfg,
+            target_frames=[
+                FrameTransformerCfg.FrameCfg(
+                    prim_path="{ENV_REGEX_NS}/Robot/left_gripper_tcp_link",
+                    name="left_control_point",
+                    offset=OffsetCfg(
+                        pos=(0.0, 0.0, 0.0),
+                        rot=(0.0, 0, 0.0, 0),
+                    ),
+                ),
+            ],
+        )
 
 
 ##

@@ -16,7 +16,7 @@ import gymnasium as gym
 ##
 gym.register(
     id="Isaac-Stack-Cube-Galbot-Left-Arm-Gripper-RmpFlow-v0",
-    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    entry_point=f"{__name__}.stack_rmp_rel_env:GalbotStackEnvWithControllerViz",
     kwargs={
         "env_cfg_entry_point": f"{__name__}.stack_rmp_rel_env_cfg:RmpFlowGalbotLeftArmCubeStackEnvCfg",
     },
