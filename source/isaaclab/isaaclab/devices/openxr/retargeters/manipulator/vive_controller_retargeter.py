@@ -156,8 +156,25 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
     Outputs 14 DOF: [left_pos(3), left_rot(3), left_grip(1), right_pos(3), right_rot(3), right_grip(1)]
 
     Supports two tracking modes:
-    - "delta": Computes DELTA movements for use with relative mode RMPFlow (default)
-    - "absolute": Uses absolute orientation tracking (not yet implemented)
+
+    **Delta Mode** (tracking_mode="delta"):
+        Computes frame-to-frame rotation deltas. The gripper orientation changes based on
+        how much the controller rotated since the previous frame. This mode can accumulate
+        drift over time but is responsive to small movements.
+
+    **Absolute Mode** (tracking_mode="absolute"):
+        Tracks the controller's orientation relative to a calibration reference established
+        on the first valid frame (or after reset). The gripper orientation directly follows
+        the controller's rotation from this calibration point. This eliminates drift and
+        provides consistent orientation mapping throughout the teleoperation session.
+
+        Calibration is automatically performed when:
+        - The retargeter is first initialized
+        - The reset() method is called (e.g., when environment resets)
+        - Teleoperation is reactivated after being deactivated
+
+    Position tracking uses delta mode in both cases (gripper position follows controller
+    movement deltas, not absolute position).
     """
 
     cfg: "ViveControllerDualArmRetargeterCfg"
@@ -197,6 +214,14 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
         self._prev_right_position = None
         self._prev_right_quaternion = None
 
+        # Calibration state for absolute tracking mode
+        # These store the controller orientation at calibration time (first valid frame)
+        self._left_calibration_quat = None  # Controller orientation at calibration [w,x,y,z]
+        self._right_calibration_quat = None
+        # These store the previous target rotation in base frame (to compute incremental deltas)
+        self._left_prev_target_rot = None  # scipy Rotation object
+        self._right_prev_target_rot = None
+
     @property
     def tracking_mode(self) -> str:
         """Get the current tracking mode.
@@ -217,12 +242,24 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
         - XR mode is activated/deactivated
         - The coordinate system changes
         - The user resets the environment
+
+        For absolute tracking mode, this also resets the calibration,
+        so the next frame will establish a new calibration reference.
         """
+        # Reset delta tracking state
         self._prev_left_position = None
         self._prev_left_quaternion = None
         self._prev_right_position = None
         self._prev_right_quaternion = None
-        # print("[DualArmRetargeter] Reset - cleared previous pose tracking")
+
+        # Reset absolute tracking calibration state
+        self._left_calibration_quat = None
+        self._right_calibration_quat = None
+        self._left_prev_target_rot = None
+        self._right_prev_target_rot = None
+
+        if self._tracking_mode == "absolute":
+            print("[DualArmRetargeter] Reset - calibration will be re-established on next valid frame")
 
     def _extract_controller_pose_and_gripper(
         self, controller_data: np.ndarray
@@ -322,26 +359,112 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Process single controller data for ABSOLUTE orientation tracking (7 elements).
 
-        This mode will map the controller's absolute orientation to the gripper orientation.
-        Currently not implemented - raises NotImplementedError.
+        In absolute mode, the gripper orientation tracks the controller's orientation
+        relative to a calibration reference (established on the first valid frame).
+
+        Key differences from delta mode:
+        - Delta mode: Outputs rotation change between current and previous frame
+        - Absolute mode: Outputs rotation to reach target orientation based on controller's
+                        absolute orientation relative to calibration
+
+        This eliminates orientation drift and ensures consistent mapping between
+        controller and gripper orientation throughout the teleoperation session.
 
         Args:
             controller_data: Raw controller data from OpenXR
-            prev_position: Previous position (used for position delta even in absolute mode)
-            prev_quaternion: Previous quaternion (may be used for calibration)
+            prev_position: Previous position (used for position delta)
+            prev_quaternion: Previous quaternion (not used in absolute mode, kept for API consistency)
             is_left: Whether this is the left controller
             world_to_base: Rotation object to transform from world to arm base frame
 
         Returns:
             Tuple of (output_array, new_position, new_quaternion)
-
-        Raises:
-            NotImplementedError: Absolute tracking mode is not yet implemented
         """
-        raise NotImplementedError(
-            "Absolute tracking mode is not yet implemented. "
-            "Use tracking_mode='delta' for now."
-        )
+        default_output = np.zeros(7)
+        default_output[6] = -1.0  # Gripper open
+
+        # Extract pose and gripper
+        current_position, current_quaternion, gripper = self._extract_controller_pose_and_gripper(controller_data)
+
+        if current_position is None:
+            return default_output, prev_position, prev_quaternion
+
+        # Get calibration and target state for this arm
+        if is_left:
+            calibration_quat = self._left_calibration_quat
+            prev_target_rot = self._left_prev_target_rot
+        else:
+            calibration_quat = self._right_calibration_quat
+            prev_target_rot = self._right_prev_target_rot
+
+        # === POSITION: Use delta tracking (same as delta mode) ===
+        if prev_position is None:
+            position_delta = np.zeros(3)
+        else:
+            position_delta_raw = current_position - prev_position
+            position_delta = position_delta_raw * self._pos_sensitivity
+            # Transform position delta from world frame to arm base frame
+            position_delta = world_to_base.apply(position_delta)
+
+        # === ORIENTATION: Absolute tracking ===
+        if calibration_quat is None:
+            # First frame: establish calibration reference
+            # Store the controller's current orientation as the calibration reference
+            calibration_quat = current_quaternion.copy()
+
+            # Initialize target rotation to identity (gripper starts at its current orientation)
+            prev_target_rot = Rotation.identity()
+
+            # Store calibration state
+            if is_left:
+                self._left_calibration_quat = calibration_quat
+                self._left_prev_target_rot = prev_target_rot
+                print(f"[DualArmRetargeter] LEFT arm calibrated - controller orientation captured")
+            else:
+                self._right_calibration_quat = calibration_quat
+                self._right_prev_target_rot = prev_target_rot
+                print(f"[DualArmRetargeter] RIGHT arm calibrated - controller orientation captured")
+
+            # Output zero rotation for calibration frame
+            rotation_delta = np.zeros(3)
+        else:
+            # Subsequent frames: compute absolute orientation tracking
+
+            # Convert quaternions to scipy format [x, y, z, w]
+            calib_quat_scipy = np.array([
+                calibration_quat[1], calibration_quat[2], calibration_quat[3], calibration_quat[0]
+            ])
+            curr_quat_scipy = np.array([
+                current_quaternion[1], current_quaternion[2], current_quaternion[3], current_quaternion[0]
+            ])
+
+            rot_calib = Rotation.from_quat(calib_quat_scipy)
+            rot_curr = Rotation.from_quat(curr_quat_scipy)
+
+            # Compute how much the controller has rotated FROM calibration TO current
+            # This represents the rotation the user has applied since calibration
+            controller_rot_from_calib = rot_curr * rot_calib.inv()
+
+            # Transform this rotation to the arm's base frame
+            # A rotation R in world frame becomes: world_to_base * R * world_to_base.inv()
+            # when expressed in the base frame (rotation conjugation)
+            target_rot_base = world_to_base * controller_rot_from_calib * world_to_base.inv()
+
+            # Compute the incremental delta from previous target to new target
+            # This is what we output so that apply_delta_pose moves toward the target
+            delta_rot = target_rot_base * prev_target_rot.inv()
+
+            # Convert to rotation vector and apply sensitivity
+            rotation_delta = delta_rot.as_rotvec() * self._rot_sensitivity
+
+            # Store the new target for next frame
+            if is_left:
+                self._left_prev_target_rot = target_rot_base
+            else:
+                self._right_prev_target_rot = target_rot_base
+
+        output = np.concatenate([position_delta, rotation_delta, [gripper]])
+        return output, current_position.copy(), current_quaternion.copy()
 
     def _process_controller(
         self, controller_data: np.ndarray, prev_position, prev_quaternion, is_left: bool, world_to_base: Rotation
