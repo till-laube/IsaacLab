@@ -83,6 +83,7 @@ UR5E_CFG = ArticulationCfg(
             damping=44.0,         # TODO: Tune this value (range: 30-60)
             friction=0.0, 
             armature=0.0,       
+        ),
 
         # Elbow joint
         "elbow": ImplicitActuatorCfg(

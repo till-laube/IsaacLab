@@ -133,7 +133,7 @@ class Ur5eDualManipulationEnv(ManagerBasedRLEnv):
                 controller_marker=self.left_controller_marker,
                 is_first_update=self._first_left_viz_update,
             )
-            if self._first_left_viz_update and self._get_left_controller_orientation() is not None:
+            if self._first_left_viz_update and self._get_left_controller_pose() is not None:
                 self._first_left_viz_update = False
 
         # Update right controller visualization
@@ -144,7 +144,7 @@ class Ur5eDualManipulationEnv(ManagerBasedRLEnv):
                 controller_marker=self.right_controller_marker,
                 is_first_update=self._first_right_viz_update,
             )
-            if self._first_right_viz_update and self._get_right_controller_orientation() is not None:
+            if self._first_right_viz_update and self._get_right_controller_pose() is not None:
                 self._first_right_viz_update = False
 
         self._debug_frame_count += 1
@@ -165,7 +165,7 @@ class Ur5eDualManipulationEnv(ManagerBasedRLEnv):
             is_first_update: Whether this is the first successful update
         """
         try:
-            # Get the gripper TCP position (from the scene)
+            # Get the gripper TCP position (from the scene) for comparison
             tcp_pos_w = self.scene[tcp_frame_name].data.target_pos_w[0, 0, :]  # [3]
             tcp_quat_w = self.scene[tcp_frame_name].data.target_quat_w[0, 0, :]  # [4] as [w, x, y, z]
         except Exception as e:
@@ -173,24 +173,28 @@ class Ur5eDualManipulationEnv(ManagerBasedRLEnv):
                 print(f"[Controller Viz] ERROR: Failed to get {controller_side} TCP data: {e}")
             return
 
-        # Get controller orientation
+        # Get controller pose (position + orientation)
         if controller_side == "left":
-            controller_quat = self._get_left_controller_orientation()
+            controller_pose = self._get_left_controller_pose()
         else:
-            controller_quat = self._get_right_controller_orientation()
+            controller_pose = self._get_right_controller_pose()
 
-        if controller_quat is not None:
-            # Update the marker at TCP position with controller orientation
-            # Convert position to numpy for visualization
-            tcp_pos_np = tcp_pos_w.cpu().numpy()
+        if controller_pose is not None:
+            controller_pos, controller_quat = controller_pose  # Unpack position and quaternion
 
             # Debug output (throttled to every 30 frames = ~0.5 seconds at 60Hz)
             if self._debug_controller_data and self._debug_frame_count % 30 == 0:
+                tcp_pos_np = tcp_pos_w.cpu().numpy()
                 tcp_quat_np = tcp_quat_w.cpu().numpy()
                 print(f"[Controller Viz Debug - {controller_side.upper()}]")
                 print(f"  TCP Position: {tcp_pos_np}")
                 print(f"  TCP Quat [w,x,y,z]: {tcp_quat_np}")
+                print(f"  Controller Position: {controller_pos}")
                 print(f"  Controller Quat [w,x,y,z]: {controller_quat}")
+                # Compute position difference
+                pos_diff = controller_pos - tcp_pos_np
+                print(f"  Position Difference (controller - TCP): {pos_diff}")
+                print(f"  Position Distance: {np.linalg.norm(pos_diff):.4f} m")
                 # Compute rotation difference
                 from scipy.spatial.transform import Rotation
                 tcp_rot = Rotation.from_quat([tcp_quat_np[1], tcp_quat_np[2], tcp_quat_np[3], tcp_quat_np[0]])
@@ -199,32 +203,33 @@ class Ur5eDualManipulationEnv(ManagerBasedRLEnv):
                 diff_euler = diff_rot.as_euler('xyz', degrees=True)
                 print(f"  Rotation Difference (euler XYZ degrees): {diff_euler}")
 
-            # Visualize the controller frame at TCP location
+            # Visualize the controller frame at its ACTUAL position in world space
             # marker_indices: which marker prototype to use (0 = "frame")
-            # translations: position in world space
-            # orientations: quaternion [w, x, y, z]
+            # translations: controller's actual position in world space
+            # orientations: controller's actual orientation [w, x, y, z]
             controller_marker.visualize(
                 marker_indices=[0],
-                translations=tcp_pos_np.reshape(1, 3),
+                translations=controller_pos.reshape(1, 3),
                 orientations=controller_quat.reshape(1, 4),
             )
 
             # Log first successful visualization
             if is_first_update:
-                print(f"[Controller Viz] ✓ Successfully visualizing {controller_side.upper()} controller frame at TCP!")
-                print(f"[Controller Viz]   Position: {tcp_pos_np}")
-                print(f"[Controller Viz]   You should see a LARGER coordinate frame at the {controller_side} gripper")
+                print(f"[Controller Viz] ✓ Successfully visualizing {controller_side.upper()} controller pose!")
+                print(f"[Controller Viz]   Controller Position: {controller_pos}")
+                print(f"[Controller Viz]   You should see a LARGER coordinate frame at the controller's actual location")
+                print(f"[Controller Viz]   Compare it with the TCP frame at the {controller_side} gripper")
         else:
             # No controller data - hide the marker by moving it far away
             controller_marker.visualize(
                 translations=np.array([[0.0, 0.0, -100.0]]),
             )
 
-    def _get_left_controller_orientation(self) -> np.ndarray | None:
-        """Get the left controller orientation in world space.
+    def _get_left_controller_pose(self) -> tuple[np.ndarray, np.ndarray] | None:
+        """Get the left controller pose (position + orientation) in world space.
 
         Returns:
-            Quaternion [w, x, y, z] in world space, or None if not available
+            Tuple of (position [x,y,z], quaternion [w,x,y,z]) in world space, or None if not available
         """
         try:
             # Import XRCore to access controller data directly
@@ -248,7 +253,7 @@ class Ur5eDualManipulationEnv(ManagerBasedRLEnv):
             controller_pose_matrix = left_controller.get_virtual_world_pose()
             if controller_pose_matrix is None:
                 if self._debug_controller_data and self._debug_frame_count % 120 == 0:
-                    print("[Controller Viz] Controller pose matrix is None")
+                    print("[Controller Viz] Left controller pose matrix is None")
                 return None
 
             # Extract position and orientation from the pose matrix
@@ -257,28 +262,26 @@ class Ur5eDualManipulationEnv(ManagerBasedRLEnv):
             quati = quat.GetImaginary()
             quatw = quat.GetReal()
 
-            # Convert to numpy array in [qw, qx, qy, qz] format
+            # Convert to numpy arrays
+            controller_pos_world = np.array([position[0], position[1], position[2]], dtype=np.float32)
             controller_quat_world = np.array([quatw, quati[0], quati[1], quati[2]], dtype=np.float32)
-
-            if self._debug_controller_data and self._debug_frame_count % 30 == 0:
-                print(f"[Controller Viz] Raw controller quat (already in world space): {controller_quat_world}")
 
             # The pose is already in virtual world space (transformed by the XR anchor)
             # so we can return it directly
-            return controller_quat_world
+            return (controller_pos_world, controller_quat_world)
 
         except Exception as e:
             # XRCore not available or error accessing controller
             # This is expected when not running in XR mode
             if self._debug_controller_data and self._debug_frame_count % 120 == 0:
-                print(f"[Controller Viz] Exception getting LEFT controller orientation: {e}")
+                print(f"[Controller Viz] Exception getting LEFT controller pose: {e}")
             return None
 
-    def _get_right_controller_orientation(self) -> np.ndarray | None:
-        """Get the right controller orientation in world space.
+    def _get_right_controller_pose(self) -> tuple[np.ndarray, np.ndarray] | None:
+        """Get the right controller pose (position + orientation) in world space.
 
         Returns:
-            Quaternion [w, x, y, z] in world space, or None if not available
+            Tuple of (position [x,y,z], quaternion [w,x,y,z]) in world space, or None if not available
         """
         try:
             # Import XRCore to access controller data directly
@@ -311,19 +314,17 @@ class Ur5eDualManipulationEnv(ManagerBasedRLEnv):
             quati = quat.GetImaginary()
             quatw = quat.GetReal()
 
-            # Convert to numpy array in [qw, qx, qy, qz] format
+            # Convert to numpy arrays
+            controller_pos_world = np.array([position[0], position[1], position[2]], dtype=np.float32)
             controller_quat_world = np.array([quatw, quati[0], quati[1], quati[2]], dtype=np.float32)
-
-            if self._debug_controller_data and self._debug_frame_count % 30 == 0:
-                print(f"[Controller Viz] Raw RIGHT controller quat (already in world space): {controller_quat_world}")
 
             # The pose is already in virtual world space (transformed by the XR anchor)
             # so we can return it directly
-            return controller_quat_world
+            return (controller_pos_world, controller_quat_world)
 
         except Exception as e:
             # XRCore not available or error accessing controller
             # This is expected when not running in XR mode
             if self._debug_controller_data and self._debug_frame_count % 120 == 0:
-                print(f"[Controller Viz] Exception getting RIGHT controller orientation: {e}")
+                print(f"[Controller Viz] Exception getting RIGHT controller pose: {e}")
             return None

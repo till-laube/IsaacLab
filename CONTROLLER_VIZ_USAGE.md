@@ -6,12 +6,15 @@ I've added visualization of the VR controller's coordinate system at the gripper
 
 ## Visual Changes
 
-When running in XR mode, you'll now see **two coordinate frames** at each gripper (left and right):
+When running in XR mode, you'll now see **coordinate frames in two different locations**:
 
-1. **Small frame (0.1 scale)**: The actual TCP/end-effector orientation (already existed)
-2. **Larger frame (0.15 scale)**: The controller's orientation at the same TCP location (NEW!)
+1. **Small frame (0.1 scale) at each gripper**: The actual TCP/end-effector pose (position + orientation) - already existed
+2. **Larger frame (0.15 scale) at controller location**: The controller's actual pose in world space (NEW!)
 
-The difference between these two frames shows you the rotation offset being applied by the retargeter.
+The **spatial relationship** between these frames shows you:
+- **Position offset**: The distance/direction from controller to TCP
+- **Rotation offset**: The orientation difference between controller and TCP
+- **Full transformation**: How the retargeter maps controller pose to gripper pose
 
 ## How to Use
 
@@ -43,7 +46,8 @@ env = gym.make(
 
 This will print:
 - TCP position and orientation
-- Controller orientation
+- Controller position and orientation
+- Position difference (distance and direction vector)
 - Rotation difference in Euler angles (XYZ degrees)
 
 ### Disable Visualization

@@ -26,12 +26,14 @@ Look for these messages when the environment initializes:
 
 After the environment starts and controllers are being tracked, you should see:
 ```
-[Controller Viz] ✓ Successfully visualizing LEFT controller frame at TCP!
-[Controller Viz]   Position: [x, y, z]
-[Controller Viz]   You should see a LARGER coordinate frame at the left gripper
-[Controller Viz] ✓ Successfully visualizing RIGHT controller frame at TCP!
-[Controller Viz]   Position: [x, y, z]
-[Controller Viz]   You should see a LARGER coordinate frame at the right gripper
+[Controller Viz] ✓ Successfully visualizing LEFT controller pose!
+[Controller Viz]   Controller Position: [x, y, z]
+[Controller Viz]   You should see a LARGER coordinate frame at the controller's actual location
+[Controller Viz]   Compare it with the TCP frame at the left gripper
+[Controller Viz] ✓ Successfully visualizing RIGHT controller pose!
+[Controller Viz]   Controller Position: [x, y, z]
+[Controller Viz]   You should see a LARGER coordinate frame at the controller's actual location
+[Controller Viz]   Compare it with the TCP frame at the right gripper
 ```
 
 **If you don't see this:**
@@ -89,21 +91,27 @@ This will print detailed information every ~0.5 seconds about:
 
 ## Visual Checklist
 
-When working correctly, you should see at **EACH gripper (left and right)**:
+When working correctly, you should see **two coordinate frames in different locations**:
 
-1. **Small RGB coordinate frame** (scale 0.1)
+1. **Small RGB coordinate frame** (scale 0.1) **at each gripper**
    - This is from `left_control_frame` / `right_control_frame` - the existing TCP visualization
    - Red = X axis, Green = Y axis, Blue = Z axis
-   - Shows the actual gripper orientation
+   - Shows the actual gripper pose (position + orientation)
+   - Moves with the robot arm
 
-2. **Larger RGB coordinate frame** (scale 0.15)
+2. **Larger RGB coordinate frame** (scale 0.15) **at controller location in world space**
    - This is the NEW controller visualization
    - Red = X axis, Green = Y axis, Blue = Z axis
-   - Shows the controller's orientation
-   - Should be at the same position as the small frame
-   - Should rotate when you rotate the corresponding controller
+   - Shows the controller's actual pose in the virtual world
+   - Should move and rotate when you move/rotate the physical controller
+   - Will be in a **different location** from the gripper (not at the same position!)
 
-**The two frames should have different orientations** - this difference shows the offset/mapping applied by the retargeter. You can compare both left and right controllers independently.
+**The spatial relationship between the two frames** shows:
+- **Position offset**: The vector from controller position to TCP position
+- **Rotation offset**: The orientation difference between controller and TCP
+- **Full transformation**: How the retargeter maps your hand movement to robot movement
+
+You can compare both left and right controllers independently to tune each arm's offset.
 
 ## Common Issues
 
