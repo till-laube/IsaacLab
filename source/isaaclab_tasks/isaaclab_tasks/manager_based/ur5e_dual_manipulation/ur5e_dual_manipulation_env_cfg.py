@@ -626,11 +626,20 @@ class Ur5eDualManipulationEnvCfg(ManagerBasedRLEnvCfg):
         # Teleoperation devices configuration
         # This is required for OpenXR-based VR teleoperation with Vive controllers
         # Must be set in __post_init__ to access self.sim.device and self.xr
+        #
+        # tracking_mode options:
+        #   - "delta": Use relative/delta rotations (default) - controller movements are
+        #              converted to incremental changes applied to the current gripper pose
+        #   - "absolute": Use absolute orientation tracking - controller orientation is
+        #                 directly mapped to gripper orientation (not yet implemented)
+        #
+        # The tracking_mode can be overridden via CLI using --tracking_mode argument
         self.teleop_devices = DevicesCfg(
             devices={
                 "vive": OpenXRDeviceCfg(
                     retargeters=[
                         ViveControllerDualArmRetargeterCfg(
+                            tracking_mode="delta",  # "delta" or "absolute"
                             pos_sensitivity=5.0,  # Position movement sensitivity
                             rot_sensitivity=5.0,  # Rotation sensitivity
                             trigger_threshold=0.5,  # Trigger threshold for gripper close

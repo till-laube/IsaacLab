@@ -155,13 +155,27 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
 
     Outputs 14 DOF: [left_pos(3), left_rot(3), left_grip(1), right_pos(3), right_rot(3), right_grip(1)]
 
-    This retargeter computes DELTA movements for use with relative mode RMPFlow.
+    Supports two tracking modes:
+    - "delta": Computes DELTA movements for use with relative mode RMPFlow (default)
+    - "absolute": Uses absolute orientation tracking (not yet implemented)
     """
 
     cfg: "ViveControllerDualArmRetargeterCfg"
 
+    # Valid tracking modes
+    TRACKING_MODES = ("delta", "absolute")
+
     def __init__(self, cfg: "ViveControllerDualArmRetargeterCfg"):
         super().__init__(cfg)
+
+        # Validate and store tracking mode
+        if cfg.tracking_mode not in self.TRACKING_MODES:
+            raise ValueError(
+                f"Invalid tracking_mode '{cfg.tracking_mode}'. Must be one of: {self.TRACKING_MODES}"
+            )
+        self._tracking_mode = cfg.tracking_mode
+        print(f"[ViveControllerDualArmRetargeter] Initialized with tracking_mode='{self._tracking_mode}'")
+
         self._pos_sensitivity = cfg.pos_sensitivity
         self._rot_sensitivity = cfg.rot_sensitivity
         self._trigger_threshold = cfg.trigger_threshold
@@ -177,11 +191,20 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
         self._left_world_to_base = self._left_base_rot.inv()
         self._right_world_to_base = self._right_base_rot.inv()
 
-        # Track previous poses for computing deltas (for relative mode)
+        # Track previous poses for computing deltas (used in delta mode)
         self._prev_left_position = None
         self._prev_left_quaternion = None
         self._prev_right_position = None
         self._prev_right_quaternion = None
+
+    @property
+    def tracking_mode(self) -> str:
+        """Get the current tracking mode.
+
+        Returns:
+            str: Either "delta" or "absolute"
+        """
+        return self._tracking_mode
 
     def get_requirements(self) -> list[RetargeterBase.Requirement]:
         """Return required data features for this retargeter."""
@@ -201,10 +224,45 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
         self._prev_right_quaternion = None
         # print("[DualArmRetargeter] Reset - cleared previous pose tracking")
 
-    def _process_controller(
+    def _extract_controller_pose_and_gripper(
+        self, controller_data: np.ndarray
+    ) -> tuple[np.ndarray | None, np.ndarray | None, float]:
+        """Extract position, quaternion, and gripper state from controller data.
+
+        Args:
+            controller_data: Raw controller data from OpenXR
+
+        Returns:
+            Tuple of (position [x,y,z], quaternion [w,x,y,z], gripper_value)
+            Position and quaternion are None if data is invalid.
+        """
+        if len(controller_data) == 0 or len(controller_data) <= DeviceBase.MotionControllerDataRowIndex.POSE.value:
+            return None, None, -1.0
+
+        pose = controller_data[DeviceBase.MotionControllerDataRowIndex.POSE.value]
+        if len(pose) < 7:
+            return None, None, -1.0
+
+        # Extract position and quaternion
+        position = pose[:3]
+        quaternion = pose[3:7]  # [qw, qx, qy, qz]
+
+        # Extract gripper from trigger
+        gripper = -1.0
+        if len(controller_data) > DeviceBase.MotionControllerDataRowIndex.INPUTS.value:
+            inputs = controller_data[DeviceBase.MotionControllerDataRowIndex.INPUTS.value]
+            if len(inputs) > DeviceBase.MotionControllerInputIndex.TRIGGER.value:
+                trigger_value = inputs[DeviceBase.MotionControllerInputIndex.TRIGGER.value]
+                gripper = 1.0 if trigger_value > self._trigger_threshold else -1.0
+
+        return position, quaternion, gripper
+
+    def _process_controller_delta(
         self, controller_data: np.ndarray, prev_position, prev_quaternion, is_left: bool, world_to_base: Rotation
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Process single controller data to Se3 DELTA format (7 elements).
+
+        This is the original delta tracking mode that computes relative movements.
 
         Args:
             controller_data: Raw controller data from OpenXR
@@ -219,22 +277,11 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
         default_output = np.zeros(7)
         default_output[6] = -1.0  # Gripper open
 
-        if len(controller_data) == 0 or len(controller_data) <= DeviceBase.MotionControllerDataRowIndex.POSE.value:
+        # Extract pose and gripper
+        current_position, current_quaternion, gripper = self._extract_controller_pose_and_gripper(controller_data)
+
+        if current_position is None:
             return default_output, prev_position, prev_quaternion
-
-        pose = controller_data[DeviceBase.MotionControllerDataRowIndex.POSE.value]
-        if len(pose) < 7:
-            return default_output, prev_position, prev_quaternion
-
-        # Extract current position and quaternion
-        current_position = pose[:3]
-        current_quaternion = pose[3:7]  # [qw, qx, qy, qz]
-
-        # Debug: Print actual controller position
-        # side = "LEFT" if is_left else "RIGHT"
-        # print(f"[DualArmRetargeter {side}] Current position: {current_position}, quat: {current_quaternion}")
-        # if prev_position is not None:
-        #     print(f"[DualArmRetargeter {side}] Previous position: {prev_position}")
 
         # Compute deltas for relative mode
         if prev_position is None:
@@ -267,29 +314,63 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
             position_delta = world_to_base.apply(position_delta)
             rotation_delta = world_to_base.apply(rotation_delta)
 
-        # Apply deadband to filter noise - ignore tiny deltas below threshold
-        # This prevents drift from tracking noise when controllers are stationary
-        # TODO: add deadband filter later on, when tracking is working properly
-        # pos_deadband = 0.0005  # 0.5mm threshold
-        # rot_deadband = 0.005   # ~0.3 degree threshold
-
-        # Zero out deltas below deadband
-        # position_delta = np.where(np.abs(position_delta) < pos_deadband, 0.0, position_delta)
-        # rotation_delta = np.where(np.abs(rotation_delta) < rot_deadband, 0.0, rotation_delta)
-
-        position = position_delta
-        rotation_vector = rotation_delta
-
-        # Gripper from trigger
-        gripper = -1.0
-        if len(controller_data) > DeviceBase.MotionControllerDataRowIndex.INPUTS.value:
-            inputs = controller_data[DeviceBase.MotionControllerDataRowIndex.INPUTS.value]
-            if len(inputs) > DeviceBase.MotionControllerInputIndex.TRIGGER.value:
-                trigger_value = inputs[DeviceBase.MotionControllerInputIndex.TRIGGER.value]
-                gripper = 1.0 if trigger_value > self._trigger_threshold else -1.0
-
-        output = np.concatenate([position, rotation_vector, [gripper]])
+        output = np.concatenate([position_delta, rotation_delta, [gripper]])
         return output, current_position.copy(), current_quaternion.copy()
+
+    def _process_controller_absolute(
+        self, controller_data: np.ndarray, prev_position, prev_quaternion, is_left: bool, world_to_base: Rotation
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Process single controller data for ABSOLUTE orientation tracking (7 elements).
+
+        This mode will map the controller's absolute orientation to the gripper orientation.
+        Currently not implemented - raises NotImplementedError.
+
+        Args:
+            controller_data: Raw controller data from OpenXR
+            prev_position: Previous position (used for position delta even in absolute mode)
+            prev_quaternion: Previous quaternion (may be used for calibration)
+            is_left: Whether this is the left controller
+            world_to_base: Rotation object to transform from world to arm base frame
+
+        Returns:
+            Tuple of (output_array, new_position, new_quaternion)
+
+        Raises:
+            NotImplementedError: Absolute tracking mode is not yet implemented
+        """
+        raise NotImplementedError(
+            "Absolute tracking mode is not yet implemented. "
+            "Use tracking_mode='delta' for now."
+        )
+
+    def _process_controller(
+        self, controller_data: np.ndarray, prev_position, prev_quaternion, is_left: bool, world_to_base: Rotation
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Process single controller data based on the configured tracking mode.
+
+        Dispatches to the appropriate processing method based on self._tracking_mode.
+
+        Args:
+            controller_data: Raw controller data from OpenXR
+            prev_position: Previous position for delta computation (or None for first frame)
+            prev_quaternion: Previous quaternion for delta computation (or None for first frame)
+            is_left: Whether this is the left controller (for debug output)
+            world_to_base: Rotation object to transform from world to arm base frame
+
+        Returns:
+            Tuple of (output_array, new_position, new_quaternion)
+        """
+        if self._tracking_mode == "delta":
+            return self._process_controller_delta(
+                controller_data, prev_position, prev_quaternion, is_left, world_to_base
+            )
+        elif self._tracking_mode == "absolute":
+            return self._process_controller_absolute(
+                controller_data, prev_position, prev_quaternion, is_left, world_to_base
+            )
+        else:
+            # Should never reach here due to validation in __init__
+            raise ValueError(f"Unknown tracking mode: {self._tracking_mode}")
 
     def retarget(self, device_output: dict) -> torch.Tensor:
         """Retarget both controllers to dual-arm Se3 DELTA commands.
@@ -331,11 +412,15 @@ class ViveControllerDualArmRetargeterCfg(RetargeterCfg):
     """Configuration for dual-arm Vive controller retargeter.
 
     Args:
+        tracking_mode: Tracking mode for orientation control. Options:
+            - "delta": Use relative/delta rotations from controller movements (default)
+            - "absolute": Use absolute orientation tracking (controller orientation maps to gripper orientation)
         left_base_quat: Quaternion [w,x,y,z] of left arm base rotation (world frame)
         right_base_quat: Quaternion [w,x,y,z] of right arm base rotation (world frame)
     """
 
     retargeter_type: type = ViveControllerDualArmRetargeter
+    tracking_mode: str = "delta"  # "delta" or "absolute"
     pos_sensitivity: float = 1.0
     rot_sensitivity: float = 1.0
     trigger_threshold: float = 0.5

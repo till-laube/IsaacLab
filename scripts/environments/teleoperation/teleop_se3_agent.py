@@ -32,6 +32,18 @@ parser.add_argument(
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
 parser.add_argument("--sensitivity", type=float, default=1.0, help="Sensitivity factor.")
 parser.add_argument(
+    "--tracking_mode",
+    type=str,
+    default=None,
+    choices=["delta", "absolute"],
+    help=(
+        "Tracking mode for VR controller orientation. "
+        "'delta': Use relative/incremental rotations (default). "
+        "'absolute': Use absolute orientation tracking (maps controller orientation to gripper). "
+        "Only applies to VR/XR teleoperation devices."
+    ),
+)
+parser.add_argument(
     "--enable_pinocchio",
     action="store_true",
     default=False,
@@ -105,6 +117,20 @@ def main() -> None:
     if args_cli.xr:
         env_cfg = remove_camera_configs(env_cfg)
         env_cfg.sim.render.antialiasing_mode = "DLSS"
+
+    # Override tracking_mode in retargeter config if specified via CLI
+    if args_cli.tracking_mode is not None:
+        if hasattr(env_cfg, "teleop_devices") and env_cfg.teleop_devices is not None:
+            for device_name, device_cfg in env_cfg.teleop_devices.devices.items():
+                if hasattr(device_cfg, "retargeters"):
+                    for retargeter_cfg in device_cfg.retargeters:
+                        if hasattr(retargeter_cfg, "tracking_mode"):
+                            old_mode = retargeter_cfg.tracking_mode
+                            retargeter_cfg.tracking_mode = args_cli.tracking_mode
+                            logger.info(
+                                f"Overriding tracking_mode for {device_name} retargeter: "
+                                f"'{old_mode}' -> '{args_cli.tracking_mode}'"
+                            )
 
     try:
         # create environment
