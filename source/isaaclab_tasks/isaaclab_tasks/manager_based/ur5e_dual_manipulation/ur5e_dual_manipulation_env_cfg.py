@@ -23,8 +23,8 @@ from isaaclab.devices.device_base import DevicesCfg
 from isaaclab.devices.openxr import OpenXRDeviceCfg, XrCfg
 from isaaclab.devices.openxr.retargeters import ViveControllerDualArmRetargeterCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
-from isaaclab.envs.mdp.actions.world_frame_rmpflow_actions import WorldFrameRMPFlowActionCfg
 from isaaclab.envs.mdp.actions.actions_cfg import BinaryJointPositionActionCfg
+from isaaclab.envs.mdp.actions.rmpflow_actions_cfg import RMPFlowActionCfg
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
@@ -33,11 +33,17 @@ from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import FrameTransformerCfg
+from isaaclab.sensors.frame_transformer.frame_transformer_cfg import OffsetCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaacsim.core.utils.extensions import get_extension_path_from_name
 
 import isaaclab.envs.mdp as mdp
+
+##
+# Pre-defined configs
+##
+from isaaclab.markers.config import FRAME_MARKER_CFG  # isort: skip
 
 ##
 # Import robot configurations
@@ -53,14 +59,21 @@ _RMP_CONFIG_DIR = os.path.join(
     get_extension_path_from_name("isaacsim.robot_motion.motion_generation"), "motion_policy_configs"
 )
 
+# Path to custom URDF with Robotiq gripper and tcp_link
+_CUSTOM_URDF_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "..", "..", "..", "..",
+    "isaaclab_assets", "data", "ur5e_dual_setup", "ur5e_robotiq_2f_140.urdf"
+)
+
 UR5E_RMPFLOW_CFG = RmpFlowControllerCfg(
     config_file=os.path.join(_RMP_CONFIG_DIR, "universal_robots", "ur5e", "rmpflow", "ur5e_rmpflow_config.yaml"),
-    urdf_file=os.path.join(_RMP_CONFIG_DIR, "universal_robots", "ur5e", "ur5e.urdf"),
+    urdf_file=_CUSTOM_URDF_PATH,  # Using custom URDF with Robotiq gripper and tcp_link
     collision_file=os.path.join(_RMP_CONFIG_DIR, "universal_robots", "ur5e", "rmpflow", "ur5e_robot_description.yaml"),
-    frame_name="tool0",  # TODO: check, bc it is likely ee_link
+    frame_name="tcp_link",  # Matches the USD tcp_link frame
     evaluations_per_frame=5,
 )
-"""Configuration of RMPFlow for UR5e arm."""
+"""Configuration of RMPFlow for UR5e arm with Robotiq 2F-140 gripper."""
 
 ##
 # Scene definition
@@ -154,12 +167,12 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
             rot=(-0.270523, 0.653339, 0.653251, 0.270609), 
             joint_pos={
                 # Arm joints - neutral ready position
-                "shoulder_pan_joint": 1.0472,
-                "shoulder_lift_joint": -1.0472,
-                "elbow_joint": 2.0944,
-                "wrist_1_joint": 3.6652,
-                "wrist_2_joint": 0.0,
-                "wrist_3_joint": 3.1415,
+                "shoulder_pan_joint": -1.57079,
+                "shoulder_lift_joint": 3.14159,
+                "elbow_joint": 0.0,
+                "wrist_1_joint": 3.14149,
+                "wrist_2_joint": -1.57079,
+                "wrist_3_joint": 0.0,
                 # Gripper joints - open position (based on actual joint names in USD)
                 "finger_joint": 0.0,
                 "left_inner_finger_joint": 0.0,
@@ -233,12 +246,12 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
             rot=(0.270583, 0.653314, 0.653276, -0.270549),  # Quaternion for RPY (180°, 45°, 90°)
             joint_pos={
                 # Arm joints - neutral ready position (mirrored)
-                "shoulder_pan_joint": -1.0472,
-                "shoulder_lift_joint": -2.0944,
-                "elbow_joint": -2.0944,
-                "wrist_1_joint": -0.5236,
-                "wrist_2_joint": 0.0,
-                "wrist_3_joint": 3.1415,
+                "shoulder_pan_joint": 1.57079,
+                "shoulder_lift_joint": 0.0,
+                "elbow_joint": 0.0,
+                "wrist_1_joint": 0.0,
+                "wrist_2_joint": 1.57079,
+                "wrist_3_joint": 0.0,
                 # Gripper joints - open position (based on actual joint names in USD)
                 "finger_joint": 0.0,
                 "left_inner_finger_joint": 0.0,
@@ -352,11 +365,42 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
     )
 
     right_ee_frame = FrameTransformerCfg(
-        prim_path="{ENV_REGEX_NS}/RightArm/base_link_inertia", 
+        prim_path="{ENV_REGEX_NS}/RightArm/base_link_inertia",
         target_frames=[
             FrameTransformerCfg.FrameCfg(
                 prim_path="{ENV_REGEX_NS}/RightArm/ee_link/robotiq_arg2f_base_link",
                 name="right_end_effector",
+            ),
+        ],
+    )
+
+    # Control point frames for visualization (configured in __post_init__)
+    left_control_frame = FrameTransformerCfg(
+        prim_path="{ENV_REGEX_NS}/LeftArm/base_link_inertia",
+        debug_vis=False,  # Will be enabled in __post_init__
+        target_frames=[
+            FrameTransformerCfg.FrameCfg(
+                prim_path="{ENV_REGEX_NS}/LeftArm/ee_link/tcp_link",
+                name="left_control_point",
+                offset=OffsetCfg(
+                    pos=(0.0, 0.0, 0.0),
+                    rot=(1.0, 0.0, 0.0, 0.0),  # Identity - same as right arm
+                ),
+            ),
+        ],
+    )
+
+    right_control_frame = FrameTransformerCfg(
+        prim_path="{ENV_REGEX_NS}/RightArm/base_link_inertia",
+        debug_vis=False,  # Will be enabled in __post_init__
+        target_frames=[
+            FrameTransformerCfg.FrameCfg(
+                prim_path="{ENV_REGEX_NS}/RightArm/ee_link/tcp_link",
+                name="right_control_point",
+                offset=OffsetCfg(
+                    pos=(0.0, 0.0, 0.0),
+                    rot=(1.0, 0.0, 0.0, 0.0),  # No offset with proper TCP
+                ),
             ),
         ],
     )
@@ -377,8 +421,154 @@ class ActionsCfg:
     Total: 14 DoF (6+1 for left arm, 6+1 for right arm)
     """
 
-    # TODO: write the ActionsCfg
+    # Left arm RMPFlow action (6 DOF: 3 pos + 3 rot) - indices 0-5
+    left_arm_action: RMPFlowActionCfg = RMPFlowActionCfg(
+        asset_name="left_arm",
+        joint_names=["shoulder_.*", "elbow_.*", "wrist_.*"],
+        body_name="tcp_link",  # Using proper TCP from USD
+        controller=UR5E_RMPFLOW_CFG,
+        scale=5.0,
+        body_offset=RMPFlowActionCfg.OffsetCfg(
+            pos=(0.0, 0.0, 0.0),  # No offset needed with proper TCP
+            rot=(1.0, 0.0, 0.0, 0.0),  # Identity - same as right arm
+        ),
+        articulation_prim_expr="/World/envs/env_.*/LeftArm",
+        use_relative_mode=True,  # Use delta movements from VR controller
+    )
 
+    # Left gripper binary action (1 DOF: open/close) - index 6
+    # NOTE: Order matters! Must come after left_arm to match retargeter output
+    left_gripper_action: BinaryJointPositionActionCfg = BinaryJointPositionActionCfg(
+        asset_name="left_arm",
+        joint_names=["finger_joint"],
+        open_command_expr={"finger_joint": 0.0},  # Open position
+        close_command_expr={"finger_joint": 0.7},  # Close position (adjust based on gripper)
+    )
+
+    # Right arm RMPFlow action (6 DOF: 3 pos + 3 rot) - indices 7-12
+    right_arm_action: RMPFlowActionCfg = RMPFlowActionCfg(
+        asset_name="right_arm",
+        joint_names=["shoulder_.*", "elbow_.*", "wrist_.*"],
+        body_name="tcp_link",  # Using proper TCP from USD
+        controller=UR5E_RMPFLOW_CFG,
+        scale=5.0,
+        body_offset=RMPFlowActionCfg.OffsetCfg(
+            pos=(0.0, 0.0, 0.0),  # No offset needed with proper TCP
+            rot=(1.0, 0.0, 0.0, 0.0),  # Identity - adjust if axes are still inverted
+        ),
+        articulation_prim_expr="/World/envs/env_.*/RightArm",
+        use_relative_mode=True,  # Use delta movements from VR controller
+    )
+
+    # Right gripper binary action (1 DOF: open/close) - index 13
+    right_gripper_action: BinaryJointPositionActionCfg = BinaryJointPositionActionCfg(
+        asset_name="right_arm",
+        joint_names=["finger_joint"],
+        open_command_expr={"finger_joint": 0.0},  # Open position
+        close_command_expr={"finger_joint": 0.7},  # Close position (adjust based on gripper)
+    )
+
+@configclass
+class ObservationsCfg:
+    """Observation specifications for the MDP.
+
+    For teleoperation data collection, we want to observe:
+    - End-effector poses (position + orientation)
+    - Joint positions and velocities
+    """
+
+    @configclass
+    class PolicyCfg(ObsGroup):
+        """Observations for policy group (used for GR00T data collection)."""
+
+        # Left arm observations
+        left_ee_pose = ObsTerm(
+            func=mdp.body_pose_w,
+            params={"asset_cfg": SceneEntityCfg("left_arm", body_names=["robotiq_arg2f_base_link"])},
+        )
+        left_joint_pos = ObsTerm(
+            func=mdp.joint_pos_rel,
+            params={"asset_cfg": SceneEntityCfg("left_arm", joint_names=["shoulder_.*", "elbow_.*", "wrist_.*"])},
+        )
+        left_joint_vel = ObsTerm(
+            func=mdp.joint_vel_rel,
+            params={"asset_cfg": SceneEntityCfg("left_arm", joint_names=["shoulder_.*", "elbow_.*", "wrist_.*"])},
+        )
+        left_gripper_pos = ObsTerm(
+            func=mdp.joint_pos_rel,
+            params={"asset_cfg": SceneEntityCfg("left_arm", joint_names=["finger_joint"])},
+        )
+
+        # Right arm observations
+        right_ee_pose = ObsTerm(
+            func=mdp.body_pose_w,
+            params={"asset_cfg": SceneEntityCfg("right_arm", body_names=["robotiq_arg2f_base_link"])},
+        )
+        right_joint_pos = ObsTerm(
+            func=mdp.joint_pos_rel,
+            params={"asset_cfg": SceneEntityCfg("right_arm", joint_names=["shoulder_.*", "elbow_.*", "wrist_.*"])},
+        )
+        right_joint_vel = ObsTerm(
+            func=mdp.joint_vel_rel,
+            params={"asset_cfg": SceneEntityCfg("right_arm", joint_names=["shoulder_.*", "elbow_.*", "wrist_.*"])},
+        )
+        right_gripper_pos = ObsTerm(
+            func=mdp.joint_pos_rel,
+            params={"asset_cfg": SceneEntityCfg("right_arm", joint_names=["finger_joint"])},
+        )
+
+        def __post_init__(self) -> None:
+            self.enable_corruption = False
+            self.concatenate_terms = True
+
+    # Observation groups
+    policy: PolicyCfg = PolicyCfg()
+
+
+@configclass
+class EventCfg:
+    """Configuration for events (resets, randomization, etc.)."""
+
+    # Reset both arms to neutral position on episode start
+    reset_left_arm = EventTerm(
+        func=mdp.reset_joints_by_offset,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("left_arm"),
+            "position_range": (0.0, 0.0),  # No randomization for teleoperation
+            "velocity_range": (0.0, 0.0),
+        },
+    )
+
+    reset_right_arm = EventTerm(
+        func=mdp.reset_joints_by_offset,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("right_arm"),
+            "position_range": (0.0, 0.0),
+            "velocity_range": (0.0, 0.0),
+        },
+    )
+
+
+@configclass
+class RewardsCfg:
+    """Reward terms for the MDP.
+
+    Note: For teleoperation data collection, rewards are typically not used.
+    These are placeholder rewards in case you want to add autonomous training later.
+    """
+
+    # Placeholder: constant reward for staying alive
+    alive = RewTerm(func=mdp.is_alive, weight=1.0)
+
+
+@configclass
+class TerminationsCfg:
+    """Termination terms for the MDP."""
+
+    # Time out after episode length
+    time_out = DoneTerm(func=mdp.time_out, time_out=True)
 
 
 ##
@@ -429,7 +619,7 @@ class Ur5eDualManipulationEnvCfg(ManagerBasedRLEnvCfg):
         # XR/VR settings for headset view
         # This positions the VR camera at a comfortable viewing height
         self.xr = XrCfg(
-            anchor_pos=(0.0, -0.5, 1.6),  # Standing position, looking at workspace
+            anchor_pos=(0.0, 0.0, 0.8),  # Standing position, looking at workspace
             anchor_rot=(1.0, 0.0, 0.0, 0.0),
         )
 
@@ -441,9 +631,14 @@ class Ur5eDualManipulationEnvCfg(ManagerBasedRLEnvCfg):
                 "vive": OpenXRDeviceCfg(
                     retargeters=[
                         ViveControllerDualArmRetargeterCfg(
-                            pos_sensitivity=5.0,  # Position movement sensitivity (match Galbot)
-                            rot_sensitivity=5.0,  # Rotation sensitivity (match Galbot)
+                            pos_sensitivity=5.0,  # Position movement sensitivity
+                            rot_sensitivity=5.0,  # Rotation sensitivity
                             trigger_threshold=0.5,  # Trigger threshold for gripper close
+                            # Arm base rotations for coordinate transformation
+                            # Left: (180°, -45°, 90°) in XYZ Euler
+                            left_base_quat=(-0.270523, 0.653339, 0.653251, 0.270609),
+                            # Right: (180°, 45°, 90°) in XYZ Euler
+                            right_base_quat=(0.270583, 0.653314, 0.653276, -0.270549),
                         ),
                     ],
                     sim_device=self.sim.device,  # Use same device as simulation
@@ -451,3 +646,19 @@ class Ur5eDualManipulationEnvCfg(ManagerBasedRLEnvCfg):
                 ),
             }
         )
+
+        # Configure control point visualization markers
+        marker_left_control_cfg = FRAME_MARKER_CFG.copy()
+        marker_left_control_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
+        marker_left_control_cfg.prim_path = "/Visuals/LeftControlMarker"
+
+        marker_right_control_cfg = FRAME_MARKER_CFG.copy()
+        marker_right_control_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
+        marker_right_control_cfg.prim_path = "/Visuals/RightControlMarker"
+
+        # Enable visualization for control frames
+        self.scene.left_control_frame.debug_vis = True
+        self.scene.left_control_frame.visualizer_cfg = marker_left_control_cfg
+
+        self.scene.right_control_frame.debug_vis = True
+        self.scene.right_control_frame.visualizer_cfg = marker_right_control_cfg
