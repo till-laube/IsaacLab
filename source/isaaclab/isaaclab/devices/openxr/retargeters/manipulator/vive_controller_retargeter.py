@@ -177,6 +177,11 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
         self._left_world_to_base = self._left_base_rot.inv()
         self._right_world_to_base = self._right_base_rot.inv()
 
+        # Controller orientation offset to align controller frame with gripper frame
+        controller_offset_scipy = [cfg.controller_offset_quat[1], cfg.controller_offset_quat[2],
+                                   cfg.controller_offset_quat[3], cfg.controller_offset_quat[0]]
+        self._controller_offset_rot = Rotation.from_quat(controller_offset_scipy)
+
         # Track previous poses for computing deltas (for relative mode)
         self._prev_left_position = None
         self._prev_left_quaternion = None
@@ -230,6 +235,18 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
         current_position = pose[:3]
         current_quaternion = pose[3:7]  # [qw, qx, qy, qz]
 
+        # Apply controller orientation offset to align controller frame with gripper frame
+        # This accounts for differences in coordinate conventions (e.g., controller Z pointing
+        # towards user vs. gripper Z pointing away from base)
+        # IMPORTANT: Apply offset in controller's LOCAL frame for proper frame transformation
+        quat_scipy = np.array([current_quaternion[1], current_quaternion[2],
+                               current_quaternion[3], current_quaternion[0]])
+        controller_rot = Rotation.from_quat(quat_scipy)
+        controller_rot_offset = controller_rot * self._controller_offset_rot
+        quat_offset_scipy = controller_rot_offset.as_quat()
+        current_quaternion = np.array([quat_offset_scipy[3], quat_offset_scipy[0],
+                                       quat_offset_scipy[1], quat_offset_scipy[2]])  # Back to [w,x,y,z]
+
         # Debug: Print actual controller position
         # side = "LEFT" if is_left else "RIGHT"
         # print(f"[DualArmRetargeter {side}] Current position: {current_position}, quat: {current_quaternion}")
@@ -262,10 +279,14 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
             rotation_delta_raw = rot_delta.as_rotvec()
             rotation_delta = rotation_delta_raw * self._rot_sensitivity
 
-            # Transform deltas from world frame to arm base frame
+            # Transform position delta from world frame to arm base frame
             # This is crucial for arms with rotated bases (e.g., ±45° angled mounts)
             position_delta = world_to_base.apply(position_delta)
-            rotation_delta = world_to_base.apply(rotation_delta)
+
+            # NOTE: Rotation delta stays in world frame!
+            # Unlike position, rotation deltas must remain in world frame to match
+            # the TCP's world-frame orientation for proper quaternion multiplication
+            # in apply_delta_pose(). Transforming to base frame causes axis misalignment.
 
         # Apply deadband to filter noise - ignore tiny deltas below threshold
         # This prevents drift from tracking noise when controllers are stationary
@@ -333,6 +354,9 @@ class ViveControllerDualArmRetargeterCfg(RetargeterCfg):
     Args:
         left_base_quat: Quaternion [w,x,y,z] of left arm base rotation (world frame)
         right_base_quat: Quaternion [w,x,y,z] of right arm base rotation (world frame)
+        controller_offset_quat: Quaternion [w,x,y,z] to align controller frame with gripper frame.
+                                Applied to controller orientation before computing deltas.
+                                Default identity (no offset). Use (0,1,0,0) for 180° around X-axis.
     """
 
     retargeter_type: type = ViveControllerDualArmRetargeter
@@ -341,3 +365,4 @@ class ViveControllerDualArmRetargeterCfg(RetargeterCfg):
     trigger_threshold: float = 0.5
     left_base_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)  # Identity by default
     right_base_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)  # Identity by default
+    controller_offset_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)  # Identity by default

@@ -639,6 +639,11 @@ class Ur5eDualManipulationEnvCfg(ManagerBasedRLEnvCfg):
                             left_base_quat=(-0.270523, 0.653339, 0.653251, 0.270609),
                             # Right: (180°, 45°, 90°) in XYZ Euler
                             right_base_quat=(0.270583, 0.653314, 0.653276, -0.270549),
+                            # Controller orientation offset: 180° around X-axis to flip Y and Z axes
+                            # This aligns controller frame with gripper frame:
+                            # - Controller Y (up) → Gripper Y (down)
+                            # - Controller Z (towards user) → Gripper Z (away from user)
+                            controller_offset_quat=(0.0, 1.0, 0.0, 0.0),  # 180° around X-axis
                         ),
                     ],
                     sim_device=self.sim.device,  # Use same device as simulation
