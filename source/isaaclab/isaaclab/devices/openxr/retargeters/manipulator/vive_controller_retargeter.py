@@ -177,10 +177,14 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
         self._left_world_to_base = self._left_base_rot.inv()
         self._right_world_to_base = self._right_base_rot.inv()
 
-        # Controller orientation offset to align controller frame with gripper frame
-        controller_offset_scipy = [cfg.controller_offset_quat[1], cfg.controller_offset_quat[2],
-                                   cfg.controller_offset_quat[3], cfg.controller_offset_quat[0]]
-        self._controller_offset_rot = Rotation.from_quat(controller_offset_scipy)
+        # Arm-specific controller orientation offsets to align controller frame with gripper frame
+        # These account for both the controller-gripper frame difference AND the arm base rotation
+        left_controller_offset_scipy = [cfg.left_controller_offset_quat[1], cfg.left_controller_offset_quat[2],
+                                        cfg.left_controller_offset_quat[3], cfg.left_controller_offset_quat[0]]
+        right_controller_offset_scipy = [cfg.right_controller_offset_quat[1], cfg.right_controller_offset_quat[2],
+                                         cfg.right_controller_offset_quat[3], cfg.right_controller_offset_quat[0]]
+        self._left_controller_offset_rot = Rotation.from_quat(left_controller_offset_scipy)
+        self._right_controller_offset_rot = Rotation.from_quat(right_controller_offset_scipy)
 
         # Track previous poses for computing deltas (for relative mode)
         self._prev_left_position = None
@@ -207,7 +211,8 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
         # print("[DualArmRetargeter] Reset - cleared previous pose tracking")
 
     def _process_controller(
-        self, controller_data: np.ndarray, prev_position, prev_quaternion, is_left: bool, world_to_base: Rotation
+        self, controller_data: np.ndarray, prev_position, prev_quaternion, is_left: bool,
+        world_to_base: Rotation, controller_offset: Rotation
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Process single controller data to Se3 DELTA format (7 elements).
 
@@ -234,18 +239,6 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
         # Extract current position and quaternion
         current_position = pose[:3]
         current_quaternion = pose[3:7]  # [qw, qx, qy, qz]
-
-        # Apply controller orientation offset to align controller frame with gripper frame
-        # This accounts for differences in coordinate conventions (e.g., controller Z pointing
-        # towards user vs. gripper Z pointing away from base)
-        # IMPORTANT: Apply offset in controller's LOCAL frame for proper frame transformation
-        quat_scipy = np.array([current_quaternion[1], current_quaternion[2],
-                               current_quaternion[3], current_quaternion[0]])
-        controller_rot = Rotation.from_quat(quat_scipy)
-        controller_rot_offset = controller_rot * self._controller_offset_rot
-        quat_offset_scipy = controller_rot_offset.as_quat()
-        current_quaternion = np.array([quat_offset_scipy[3], quat_offset_scipy[0],
-                                       quat_offset_scipy[1], quat_offset_scipy[2]])  # Back to [w,x,y,z]
 
         # Debug: Print actual controller position
         # side = "LEFT" if is_left else "RIGHT"
@@ -274,19 +267,22 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
             rot_prev = Rotation.from_quat(quat_prev_scipy)
             rot_curr = Rotation.from_quat(quat_curr_scipy)
 
-            # Compute relative rotation (delta)
+            # Compute relative rotation (delta) as a Rotation object
             rot_delta = rot_curr * rot_prev.inv()
-            rotation_delta_raw = rot_delta.as_rotvec()
-            rotation_delta = rotation_delta_raw * self._rot_sensitivity
+
+            # Apply controller offset: transforms from controller axes to gripper axes
+            # Use similarity transformation: offset * delta * offset^-1
+            rot_delta = controller_offset * rot_delta * controller_offset.inv()
+
+            # Transform from world frame to arm base frame
+            # Use similarity transformation: base^-1 * delta * base
+            rot_delta = world_to_base.inv() * rot_delta * world_to_base
+
+            # Convert to rotation vector (axis-angle) and apply sensitivity
+            rotation_delta = rot_delta.as_rotvec() * self._rot_sensitivity
 
             # Transform position delta from world frame to arm base frame
-            # This is crucial for arms with rotated bases (e.g., ±45° angled mounts)
             position_delta = world_to_base.apply(position_delta)
-
-            # NOTE: Rotation delta stays in world frame!
-            # Unlike position, rotation deltas must remain in world frame to match
-            # the TCP's world-frame orientation for proper quaternion multiplication
-            # in apply_delta_pose(). Transforming to base frame causes axis misalignment.
 
         # Apply deadband to filter noise - ignore tiny deltas below threshold
         # This prevents drift from tracking noise when controllers are stationary
@@ -326,19 +322,19 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
         right_data = device_output.get(DeviceBase.TrackingTarget.CONTROLLER_RIGHT, np.array([]))
 
         # Process left controller and update tracking
-        # Pass left arm's world_to_base transformation
+        # Pass left arm's world_to_base transformation and controller offset
         left_output, new_left_pos, new_left_quat = self._process_controller(
             left_data, self._prev_left_position, self._prev_left_quaternion, is_left=True,
-            world_to_base=self._left_world_to_base
+            world_to_base=self._left_world_to_base, controller_offset=self._left_controller_offset_rot
         )
         self._prev_left_position = new_left_pos
         self._prev_left_quaternion = new_left_quat
 
         # Process right controller and update tracking
-        # Pass right arm's world_to_base transformation
+        # Pass right arm's world_to_base transformation and controller offset
         right_output, new_right_pos, new_right_quat = self._process_controller(
             right_data, self._prev_right_position, self._prev_right_quaternion, is_left=False,
-            world_to_base=self._right_world_to_base
+            world_to_base=self._right_world_to_base, controller_offset=self._right_controller_offset_rot
         )
         self._prev_right_position = new_right_pos
         self._prev_right_quaternion = new_right_quat
@@ -354,9 +350,10 @@ class ViveControllerDualArmRetargeterCfg(RetargeterCfg):
     Args:
         left_base_quat: Quaternion [w,x,y,z] of left arm base rotation (world frame)
         right_base_quat: Quaternion [w,x,y,z] of right arm base rotation (world frame)
-        controller_offset_quat: Quaternion [w,x,y,z] to align controller frame with gripper frame.
-                                Applied to controller orientation before computing deltas.
-                                Default identity (no offset). Use (0,1,0,0) for 180° around X-axis.
+        left_controller_offset_quat: Quaternion [w,x,y,z] to align left controller with left gripper.
+                                     Applied in controller's local frame before computing deltas.
+        right_controller_offset_quat: Quaternion [w,x,y,z] to align right controller with right gripper.
+                                      Applied in controller's local frame before computing deltas.
     """
 
     retargeter_type: type = ViveControllerDualArmRetargeter
@@ -365,4 +362,5 @@ class ViveControllerDualArmRetargeterCfg(RetargeterCfg):
     trigger_threshold: float = 0.5
     left_base_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)  # Identity by default
     right_base_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)  # Identity by default
-    controller_offset_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)  # Identity by default
+    left_controller_offset_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)  # Identity by default
+    right_controller_offset_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)  # Identity by default

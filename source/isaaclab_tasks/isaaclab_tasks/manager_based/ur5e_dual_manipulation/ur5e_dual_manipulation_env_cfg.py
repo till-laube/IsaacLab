@@ -427,7 +427,7 @@ class ActionsCfg:
         joint_names=["shoulder_.*", "elbow_.*", "wrist_.*"],
         body_name="tcp_link",  # Using proper TCP from USD
         controller=UR5E_RMPFLOW_CFG,
-        scale=1.0,
+        scale=5.0,
         body_offset=RMPFlowActionCfg.OffsetCfg(
             pos=(0.0, 0.0, 0.0),  # No offset needed with proper TCP
             rot=(1.0, 0.0, 0.0, 0.0),  # Identity - same as right arm
@@ -451,7 +451,7 @@ class ActionsCfg:
         joint_names=["shoulder_.*", "elbow_.*", "wrist_.*"],
         body_name="tcp_link",  # Using proper TCP from USD
         controller=UR5E_RMPFLOW_CFG,
-        scale=1.0,
+        scale=5.0,
         body_offset=RMPFlowActionCfg.OffsetCfg(
             pos=(0.0, 0.0, 0.0),  # No offset needed with proper TCP
             rot=(1.0, 0.0, 0.0, 0.0),  # Identity - adjust if axes are still inverted
@@ -631,19 +631,19 @@ class Ur5eDualManipulationEnvCfg(ManagerBasedRLEnvCfg):
                 "vive": OpenXRDeviceCfg(
                     retargeters=[
                         ViveControllerDualArmRetargeterCfg(
-                            pos_sensitivity=7.0,  # Position movement sensitivity
-                            rot_sensitivity=10.0,  # Rotation sensitivity
+                            pos_sensitivity=1.3,  # Position movement sensitivity
+                            rot_sensitivity=20.0,  # Rotation sensitivity
                             trigger_threshold=0.5,  # Trigger threshold for gripper close
                             # Arm base rotations for coordinate transformation
                             # Left: (180°, -45°, 90°) in XYZ Euler
                             left_base_quat=(-0.270523, 0.653339, 0.653251, 0.270609),
                             # Right: (180°, 45°, 90°) in XYZ Euler
                             right_base_quat=(0.270583, 0.653314, 0.653276, -0.270549),
-                            # Controller orientation offset: 180° around X-axis to flip Y and Z axes
-                            # This aligns controller frame with gripper frame:
-                            # - Controller Y (up) → Gripper Y (down)
-                            # - Controller Z (towards user) → Gripper Z (away from user)
-                            controller_offset_quat=(0.0, 1.0, 0.0, 0.0),  # 180° around X-axis
+                            # Arm-specific controller orientation offsets
+                            # Left: Composition of 180° X (flip Y,Z) + 90° Z (swap X,Y) = 180° around (X+Y)/√2
+                            # This maps: Controller X→Gripper -Y, Controller Y→Gripper -X, Controller Z→Gripper -Z
+                            left_controller_offset_quat=(0.0, 0.707107, 0.707107, 0.0),  # 180° around (1,1,0)/√2
+                            right_controller_offset_quat=(1.0, 0.0, 0.0, 0.0),  # 180° around X-axis (to be adjusted)
                         ),
                     ],
                     sim_device=self.sim.device,  # Use same device as simulation
