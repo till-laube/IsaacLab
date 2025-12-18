@@ -120,6 +120,7 @@ class OpenXRDevice(DeviceBase):
         # Track previous button states for edge detection
         self._prev_left_squeeze = 0.0
         self._prev_right_squeeze = 0.0
+        self._prev_left_x_button = 0.0  # Track X button state for reset
         self._teleop_toggle_state = False  # Start inactive - activate with SQUEEZE button
 
         # Optional anchor synchronizer
@@ -315,6 +316,19 @@ class OpenXRDevice(DeviceBase):
                                 self._additional_callbacks["STOP"]()
                                 print("[OpenXR] Right SQUEEZE pressed - Teleoperation STOPPED")
                     self._prev_right_squeeze = current_right_squeeze
+
+                # Check for X button press on left controller to reset environment
+                # X button (button_0) is index 4 in the inputs row (row 1)
+                if left_ctrl.size > 0 and len(left_ctrl) > 1:
+                    current_left_x = left_ctrl[1][4] if len(left_ctrl[1]) > 4 else 0.0
+                    # Detect rising edge (button just pressed)
+                    if current_left_x > 0.5 and self._prev_left_x_button <= 0.5:
+                        # Trigger reset
+                        if "RESET" in self._additional_callbacks:
+                            self._additional_callbacks["RESET"]()
+                            print("[OpenXR] Left X button pressed - Environment RESET triggered")
+                        self.reset()
+                    self._prev_left_x_button = current_left_x
 
             except Exception:
                 # Ignore controller data if XRCore/controller APIs are unavailable
