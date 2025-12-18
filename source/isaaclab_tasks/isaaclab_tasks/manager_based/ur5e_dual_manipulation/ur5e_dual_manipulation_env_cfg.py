@@ -427,7 +427,7 @@ class ActionsCfg:
         joint_names=["shoulder_.*", "elbow_.*", "wrist_.*"],
         body_name="tcp_link",  # Using proper TCP from USD
         controller=UR5E_RMPFLOW_CFG,
-        scale=5.0,
+        scale=1.0,
         body_offset=RMPFlowActionCfg.OffsetCfg(
             pos=(0.0, 0.0, 0.0),  # No offset needed with proper TCP
             rot=(1.0, 0.0, 0.0, 0.0),  # Identity - same as right arm
@@ -451,7 +451,7 @@ class ActionsCfg:
         joint_names=["shoulder_.*", "elbow_.*", "wrist_.*"],
         body_name="tcp_link",  # Using proper TCP from USD
         controller=UR5E_RMPFLOW_CFG,
-        scale=5.0,
+        scale=1.0,
         body_offset=RMPFlowActionCfg.OffsetCfg(
             pos=(0.0, 0.0, 0.0),  # No offset needed with proper TCP
             rot=(1.0, 0.0, 0.0, 0.0),  # Identity - adjust if axes are still inverted
@@ -631,8 +631,8 @@ class Ur5eDualManipulationEnvCfg(ManagerBasedRLEnvCfg):
                 "vive": OpenXRDeviceCfg(
                     retargeters=[
                         ViveControllerDualArmRetargeterCfg(
-                            pos_sensitivity=1.3,  # Position movement sensitivity
-                            rot_sensitivity=20.0,  # Rotation sensitivity
+                            pos_sensitivity=1.0,  # Position movement sensitivity
+                            rot_sensitivity=1.0,  # Rotation sensitivity
                             trigger_threshold=0.5,  # Trigger threshold for gripper close
                             # Arm base rotations for coordinate transformation
                             # Left: (180°, -45°, 90°) in XYZ Euler
