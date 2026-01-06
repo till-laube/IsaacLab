@@ -66,14 +66,22 @@ _CUSTOM_URDF_PATH = os.path.join(
     "isaaclab_assets", "data", "ur5e_dual_setup", "ur5e_robotiq_2f_140.urdf"
 )
 
+# Path to custom RMPFlow configs for UR5e + Robotiq 2F-140
+_CUSTOM_RMPFLOW_DIR = os.path.join(
+    os.path.dirname(__file__),
+    "..", "..", "..", "..",
+    "isaaclab_assets", "data", "ur5e_dual_setup", "rmpflow"
+)
+
 UR5E_RMPFLOW_CFG = RmpFlowControllerCfg(
-    config_file=os.path.join(_RMP_CONFIG_DIR, "universal_robots", "ur5e", "rmpflow", "ur5e_rmpflow_config.yaml"),
+    config_file=os.path.join(_CUSTOM_RMPFLOW_DIR, "ur5e_robotiq140_rmpflow_config.yaml"),
     urdf_file=_CUSTOM_URDF_PATH,  # Using custom URDF with Robotiq gripper and tcp_link
-    collision_file=os.path.join(_RMP_CONFIG_DIR, "universal_robots", "ur5e", "rmpflow", "ur5e_robot_description.yaml"),
+    collision_file=os.path.join(_CUSTOM_RMPFLOW_DIR, "ur5e_robotiq140_robot_description.yaml"),
     frame_name="tcp_link",  # Matches the USD tcp_link frame
     evaluations_per_frame=5,
+    ignore_robot_state_updates=True,  # CRITICAL: Same as Galbot for proper relative mode
 )
-"""Configuration of RMPFlow for UR5e arm with Robotiq 2F-140 gripper."""
+"""Configuration of RMPFlow for UR5e arm with Robotiq 2F-140 gripper (custom configs with gripper collision)."""
 
 ##
 # Scene definition
@@ -168,9 +176,9 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
             joint_pos={
                 # Arm joints - neutral ready position
                 "shoulder_pan_joint": -1.57079,
-                "shoulder_lift_joint": 3.14159,
-                "elbow_joint": 0.0,
-                "wrist_1_joint": 3.14149,
+                "shoulder_lift_joint": -1.57079,
+                "elbow_joint": -1.57079,
+                "wrist_1_joint": 3.14159,
                 "wrist_2_joint": -1.57079,
                 "wrist_3_joint": -0.78539,
                 # Gripper joints - open position (based on actual joint names in USD)
@@ -202,22 +210,22 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
             # Gripper actuators (updated for actual joint names)
             "gripper_drive": ImplicitActuatorCfg(
                 joint_names_expr=["finger_joint"],
-                effort_limit=1650.0,
-                velocity_limit=10.0,
+                effort_limit_sim=1650.0,
+                velocity_limit_sim=10.0,
                 stiffness=17.0,
                 damping=0.02,
             ),
             "gripper_finger": ImplicitActuatorCfg(
                 joint_names_expr=[".*_inner_finger_joint"],
-                effort_limit=50.0,
-                velocity_limit=10.0,
+                effort_limit_sim=50.0,
+                velocity_limit_sim=10.0,
                 stiffness=0.2,
                 damping=0.001,
             ),
             "gripper_passive": ImplicitActuatorCfg(
                 joint_names_expr=[".*_inner_knuckle_joint", "right_outer_knuckle_joint"],
-                effort_limit=1.0,
-                velocity_limit=10.0,
+                effort_limit_sim=1.0,
+                velocity_limit_sim=10.0,
                 stiffness=0.0,
                 damping=0.0,
             ),
@@ -247,8 +255,8 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
             joint_pos={
                 # Arm joints - neutral ready position (mirrored)
                 "shoulder_pan_joint": 1.57079,
-                "shoulder_lift_joint": 0.0,
-                "elbow_joint": 0.0,
+                "shoulder_lift_joint": -1.57079,
+                "elbow_joint": 1.57079,
                 "wrist_1_joint": 0.0,
                 "wrist_2_joint": 1.57079,
                 "wrist_3_joint": 0.78539,
@@ -281,22 +289,22 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
             # Gripper actuators (updated for actual joint names)
             "gripper_drive": ImplicitActuatorCfg(
                 joint_names_expr=["finger_joint"],
-                effort_limit=1650.0,
-                velocity_limit=10.0,
+                effort_limit_sim=1650.0,
+                velocity_limit_sim=10.0,
                 stiffness=17.0,
                 damping=0.02,
             ),
             "gripper_finger": ImplicitActuatorCfg(
                 joint_names_expr=[".*_inner_finger_joint"],
-                effort_limit=50.0,
-                velocity_limit=10.0,
+                effort_limit_sim=50.0,
+                velocity_limit_sim=10.0,
                 stiffness=0.2,
                 damping=0.001,
             ),
             "gripper_passive": ImplicitActuatorCfg(
                 joint_names_expr=[".*_inner_knuckle_joint", "right_outer_knuckle_joint"],
-                effort_limit=1.0,
-                velocity_limit=10.0,
+                effort_limit_sim=1.0,
+                velocity_limit_sim=10.0,
                 stiffness=0.0,
                 damping=0.0,
             ),
@@ -427,7 +435,7 @@ class ActionsCfg:
         joint_names=["shoulder_.*", "elbow_.*", "wrist_.*"],
         body_name="tcp_link",  # Using proper TCP from USD
         controller=UR5E_RMPFLOW_CFG,
-        scale=1.0,
+        scale=1.0,  # Matches single arm setup
         body_offset=RMPFlowActionCfg.OffsetCfg(
             pos=(0.0, 0.0, 0.0),  # No offset needed with proper TCP
             rot=(1.0, 0.0, 0.0, 0.0),  # Identity - same as right arm
@@ -451,7 +459,7 @@ class ActionsCfg:
         joint_names=["shoulder_.*", "elbow_.*", "wrist_.*"],
         body_name="tcp_link",  # Using proper TCP from USD
         controller=UR5E_RMPFLOW_CFG,
-        scale=1.0,
+        scale=1.0,  # Matches single arm setup
         body_offset=RMPFlowActionCfg.OffsetCfg(
             pos=(0.0, 0.0, 0.0),  # No offset needed with proper TCP
             rot=(1.0, 0.0, 0.0, 0.0),  # Identity - adjust if axes are still inverted
@@ -631,8 +639,8 @@ class Ur5eDualManipulationEnvCfg(ManagerBasedRLEnvCfg):
                 "vive": OpenXRDeviceCfg(
                     retargeters=[
                         ViveControllerDualArmRetargeterCfg(
-                            pos_sensitivity=1.0,  # Position movement sensitivity
-                            rot_sensitivity=1.0,  # Rotation sensitivity
+                            pos_sensitivity=5.0,  # Position movement sensitivity (matches single arm)
+                            rot_sensitivity=5.0,  # Rotation sensitivity
                             trigger_threshold=0.5,  # Trigger threshold for gripper close
                             # Arm base rotations for coordinate transformation
                             # Left: (180°, -45°, 90°) in XYZ Euler
@@ -640,10 +648,9 @@ class Ur5eDualManipulationEnvCfg(ManagerBasedRLEnvCfg):
                             # Right: (180°, 45°, 90°) in XYZ Euler
                             right_base_quat=(0.270583, 0.653314, 0.653276, -0.270549),
                             # Arm-specific controller orientation offsets
-                            # Left: Composition of 180° X (flip Y,Z) + 90° Z (swap X,Y) = 180° around (X+Y)/√2
-                            # This maps: Controller X→Gripper -Y, Controller Y→Gripper -X, Controller Z→Gripper -Z
-                            left_controller_offset_quat=(0.0, 0.707107, 0.707107, 0.0),  # 180° around (1,1,0)/√2
-                            right_controller_offset_quat=(1.0, 0.0, 0.0, 0.0),  # 180° around X-axis (to be adjusted)
+                            # Calculated from debug output to align controller frame with gripper frame
+                            left_controller_offset_quat=(0.6532815, 0.6532815, -0.2705981, -0.2705981),
+                            right_controller_offset_quat=(-0.2705981, 0.6532815, -0.6532815, 0.2705981), 
                         ),
                     ],
                     sim_device=self.sim.device,  # Use same device as simulation
