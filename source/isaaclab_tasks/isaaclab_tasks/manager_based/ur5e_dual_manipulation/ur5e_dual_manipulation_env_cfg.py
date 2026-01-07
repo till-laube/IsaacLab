@@ -613,16 +613,16 @@ class Ur5eDualManipulationEnvCfg(ManagerBasedRLEnvCfg):
     def __post_init__(self) -> None:
         """Post initialization - set simulation parameters."""
         # General settings
-        self.decimation = 2  # Control decimation (2 = 60Hz control at 120Hz sim)
-        self.episode_length_s = 60.0  # 60 second episodes for teleoperation
+        self.decimation = 3  # Control decimation (20Hz control within 60Hz sim)
+        self.episode_length_s = 30.0  # TODO: Adjust this for our data collection?
 
         # Viewer settings
         self.viewer.eye = (2.0, 2.0, 1.5)  # Camera position for viewing
         self.viewer.lookat = (0.0, 0.0, 1.3)  # Look at the arms
 
         # Simulation settings
-        self.sim.dt = 1 / 120  # 120Hz simulation
-        self.sim.render_interval = self.decimation
+        self.sim.dt = 1 / 60  # 60Hz simulation
+        self.sim.render_interval = 6
 
         # XR/VR settings for headset view
         # This positions the VR camera at a comfortable viewing height
@@ -642,15 +642,17 @@ class Ur5eDualManipulationEnvCfg(ManagerBasedRLEnvCfg):
                             pos_sensitivity=5.0,  # Position movement sensitivity (matches single arm)
                             rot_sensitivity=5.0,  # Rotation sensitivity
                             trigger_threshold=0.5,  # Trigger threshold for gripper close
-                            # Arm base rotations for coordinate transformation
+                            # Arm base rotations for coordinate transformation (world frame to arm base frame)
                             # Left: (180°, -45°, 90°) in XYZ Euler
                             left_base_quat=(-0.270523, 0.653339, 0.653251, 0.270609),
                             # Right: (180°, 45°, 90°) in XYZ Euler
                             right_base_quat=(0.270583, 0.653314, 0.653276, -0.270549),
-                            # Arm-specific controller orientation offsets
-                            # Calculated from debug output to align controller frame with gripper frame
-                            left_controller_offset_quat=(0.6532815, 0.6532815, -0.2705981, -0.2705981),
-                            right_controller_offset_quat=(-0.2705981, 0.6532815, -0.6532815, 0.2705981), 
+                            # Controller-to-gripper orientation offsets (applied in ARM BASE frame, not world frame)
+                            # IMPORTANT: These are now applied AFTER world-to-base transformation
+                            # Set to identity (no offset) initially to test if basic transformation works
+                            # Tune these later if controller axes don't match gripper axes
+                            left_controller_offset_quat=(1.0, 0.0, 0.0, 0.0),   # Identity - no offset
+                            right_controller_offset_quat=(1.0, 0.0, 0.0, 0.0),  # Identity - no offset
                         ),
                     ],
                     sim_device=self.sim.device,  # Use same device as simulation
