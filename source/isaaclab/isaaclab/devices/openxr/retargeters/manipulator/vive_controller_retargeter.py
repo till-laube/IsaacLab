@@ -222,6 +222,7 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
             prev_quaternion: Previous quaternion for delta computation (or None for first frame)
             is_left: Whether this is the left controller (for debug output)
             world_to_base: Rotation object to transform deltas from world to arm base frame
+            controller_offset: Rotation offset to align controller frame with gripper frame (applied in arm base frame)
 
         Returns:
             Tuple of (output_array, new_position, new_quaternion)
@@ -252,12 +253,12 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
             position_delta = np.zeros(3)
             rotation_delta = np.zeros(3)
         else:
-            # Compute position delta
+            # Compute position delta in world frame
             position_delta_raw = current_position - prev_position
             position_delta = position_delta_raw * self._pos_sensitivity
 
-            # Compute rotation delta
-            # Convert quaternions to rotations
+            # Compute rotation delta in world frame
+            # Convert quaternions to rotations (scipy format: [x, y, z, w])
             quat_prev_scipy = np.array(
                 [prev_quaternion[1], prev_quaternion[2], prev_quaternion[3], prev_quaternion[0]]
             )
@@ -267,32 +268,21 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
             rot_prev = Rotation.from_quat(quat_prev_scipy)
             rot_curr = Rotation.from_quat(quat_curr_scipy)
 
-            # Compute relative rotation (delta) as a Rotation object
-            rot_delta = rot_curr * rot_prev.inv()
+            # Step 1: Compute relative rotation (delta) in WORLD frame
+            rot_delta_world = rot_curr * rot_prev.inv()
 
-            # Apply controller offset: transforms from controller axes to gripper axes
-            # Use similarity transformation: offset * delta * offset^-1
-            rot_delta = controller_offset * rot_delta * controller_offset.inv()
+            # Step 2: Transform delta from world frame to arm base frame
+            rot_delta_base = world_to_base * rot_delta_world * world_to_base.inv()
 
-            # Transform from world frame to arm base frame
-            # Use similarity transformation: base^-1 * delta * base
-            rot_delta = world_to_base.inv() * rot_delta * world_to_base
+            # Step 3: Apply controller offset in arm base frame
+            # This aligns controller coordinate axes with gripper coordinate axes
+            rot_delta_final = rot_delta_base * controller_offset
 
             # Convert to rotation vector (axis-angle) and apply sensitivity
-            rotation_delta = rot_delta.as_rotvec() * self._rot_sensitivity
+            rotation_delta = rot_delta_final.as_rotvec() * self._rot_sensitivity
 
             # Transform position delta from world frame to arm base frame
             position_delta = world_to_base.apply(position_delta)
-
-        # Apply deadband to filter noise - ignore tiny deltas below threshold
-        # This prevents drift from tracking noise when controllers are stationary
-        # TODO: add deadband filter later on, when tracking is working properly
-        # pos_deadband = 0.0005  # 0.5mm threshold
-        # rot_deadband = 0.005   # ~0.3 degree threshold
-
-        # Zero out deltas below deadband
-        # position_delta = np.where(np.abs(position_delta) < pos_deadband, 0.0, position_delta)
-        # rotation_delta = np.where(np.abs(rotation_delta) < rot_deadband, 0.0, rotation_delta)
 
         position = position_delta
         rotation_vector = rotation_delta
@@ -347,13 +337,38 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
 class ViveControllerDualArmRetargeterCfg(RetargeterCfg):
     """Configuration for dual-arm Vive controller retargeter.
 
+    This retargeter transforms controller movements into gripper commands for dual-arm manipulation.
+    It handles two key coordinate transformations in sequence:
+
+    **Transformation Pipeline:**
+    1. Compute rotation delta in world frame: delta_world = curr_controller * prev_controller^-1
+    2. Transform delta from world frame to arm base frame: delta_base = R_world_to_base * delta_world * R_world_to_base^-1
+    3. Apply controller offset in arm base frame: delta_final = delta_base * controller_offset
+    4. Convert to rotation vector (axis-angle representation)
+
     Args:
-        left_base_quat: Quaternion [w,x,y,z] of left arm base rotation (world frame)
-        right_base_quat: Quaternion [w,x,y,z] of right arm base rotation (world frame)
-        left_controller_offset_quat: Quaternion [w,x,y,z] to align left controller with left gripper.
-                                     Applied in controller's local frame before computing deltas.
-        right_controller_offset_quat: Quaternion [w,x,y,z] to align right controller with right gripper.
-                                      Applied in controller's local frame before computing deltas.
+        pos_sensitivity: Multiplier for position deltas (higher = more sensitive)
+        rot_sensitivity: Multiplier for rotation deltas (higher = more sensitive)
+        trigger_threshold: Trigger value (0.0-1.0) to consider gripper closed
+
+        left_base_quat: Quaternion [w,x,y,z] representing the left arm base orientation in world frame.
+                        Used to transform movement deltas from world coordinates to arm base coordinates.
+                        Example: For arm mounted at (180°, -45°, 90°), this captures that rotation.
+
+        right_base_quat: Quaternion [w,x,y,z] representing the right arm base orientation in world frame.
+                         Used to transform movement deltas from world coordinates to arm base coordinates.
+                         Example: For arm mounted at (180°, 45°, 90°), this captures that rotation.
+
+        left_controller_offset_quat: Quaternion [w,x,y,z] to align left controller axes with left gripper axes.
+                                     Applied IN ARM BASE FRAME as: delta_final = delta_base * offset
+                                     This compensates for controller vs gripper coordinate frame differences.
+                                     Identity (1,0,0,0) means controller axes match gripper axes.
+
+        right_controller_offset_quat: Quaternion [w,x,y,z] to align right controller axes with right gripper axes.
+                                      Applied IN ARM BASE FRAME as: delta_final = delta_base * offset
+                                      This compensates for controller vs gripper coordinate frame differences.
+                                      Identity (1,0,0,0) means controller axes match gripper axes.
+
     """
 
     retargeter_type: type = ViveControllerDualArmRetargeter
