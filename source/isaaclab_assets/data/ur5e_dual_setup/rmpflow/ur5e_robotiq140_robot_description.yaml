@@ -46,6 +46,9 @@ cspace_to_urdf_rules:
 # not be able to avoid obstacles.
 
 collision_spheres:
+  - ur5e_base_link:
+    - "center": [0.0, 0.0, 0.08]
+      "radius": 0.065
   - wrist_1_link:
     - "center": [-0.0, 0.027, -0.002]
       "radius": 0.041
@@ -130,7 +133,7 @@ collision_spheres:
       "radius": 0.056
     - "center": [-0.082, 0.0, 0.011]
       "radius": 0.057
-  - ee_link_robotiq_arg2f_base_link:
+  - robotiq_base_link:
     - "center": [0.0, 0.0, 0.05]
       "radius": 0.045
     - "center": [0.0, 0.0, 0.02]

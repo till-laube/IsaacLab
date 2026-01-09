@@ -86,7 +86,7 @@ canonical_resolve:
     verbose: false
 
 body_cylinders:
-    - name: base_link
+    - name: ur5e_base_link
       pt1: [0, 0, 0.15]
       pt2: [0, 0, 0]
       radius: .065
@@ -96,7 +96,7 @@ body_collision_controllers:
     radius: .04
   - name: wrist_3_link
     radius: .04
-  - name: ee_link_robotiq_arg2f_base_link
+  - name: robotiq_base_link
     radius: .055  # Gripper base body
   - name: tcp_link
     radius: .06  # TCP at gripper fingers (larger to account for finger geometry)

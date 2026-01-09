@@ -181,13 +181,15 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
                 "wrist_1_joint": 3.14159,
                 "wrist_2_joint": -1.57079,
                 "wrist_3_joint": -0.78539,
-                # Gripper joints - open position (based on actual joint names in USD)
+                # Gripper joints - open position
                 "finger_joint": 0.0,
                 "left_inner_finger_joint": 0.0,
                 "right_inner_finger_joint": 0.0,
-                "left_inner_knuckle_joint": 0.0,
-                "right_inner_knuckle_joint": 0.0,
                 "right_outer_knuckle_joint": 0.0,
+                "left_outer_finger_joint": 0.0,
+                "right_outer_finger_joint": 0.0,
+                #"left_inner_finger_pad_joint": 0.0,
+                #"right_inner_finger_pad_joint": 0.0,
             },
         ),
         actuators={
@@ -207,27 +209,34 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
                 stiffness=150.0,
                 damping=18.0,
             ),
-            # Gripper actuators (updated for actual joint names)
+            # Gripper actuators (updated for new URDF with mimic joints)
             "gripper_drive": ImplicitActuatorCfg(
                 joint_names_expr=["finger_joint"],
                 effort_limit_sim=1650.0,
-                velocity_limit_sim=10.0,
-                stiffness=17.0,
-                damping=0.02,
+                velocity_limit_sim=2.268928,
+                stiffness=500.0,
+                damping=0.2,
             ),
-            "gripper_finger": ImplicitActuatorCfg(
-                joint_names_expr=[".*_inner_finger_joint"],
-                effort_limit_sim=50.0,
-                velocity_limit_sim=10.0,
-                stiffness=0.2,
-                damping=0.001,
-            ),
-            "gripper_passive": ImplicitActuatorCfg(
-                joint_names_expr=[".*_inner_knuckle_joint", "right_outer_knuckle_joint"],
+            "gripper_mimics": ImplicitActuatorCfg(
+                joint_names_expr=[
+                    ".*_outer_knuckle_joint", 
+                    #".*_outer_finger_joint", 
+                    #".*_inner_finger_pad_joint",
+                ],
                 effort_limit_sim=1.0,
                 velocity_limit_sim=10.0,
+                stiffness=0.0,  # Very high stiffness for parallel grip on flat objects
+                damping=0.0,  # High damping to prevent oscillation
+            ),
+            "gripper_finger": ImplicitActuatorCfg(
+                joint_names_expr=[
+                    ".*_inner_finger_joint",
+                    ".*_inner_finger_pad_joint",
+                ],
+                effort_limit_sim=50.0,
+                velocity_limit_sim=10.0,
                 stiffness=0.0,
-                damping=0.0,
+                damping=1.0,
             ),
         },
     )
@@ -260,13 +269,13 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
                 "wrist_1_joint": 0.0,
                 "wrist_2_joint": 1.57079,
                 "wrist_3_joint": 0.78539,
-                # Gripper joints - open position (based on actual joint names in USD)
+                # Gripper joints - open position
                 "finger_joint": 0.0,
                 "left_inner_finger_joint": 0.0,
                 "right_inner_finger_joint": 0.0,
-                "left_inner_knuckle_joint": 0.0,
-                "right_inner_knuckle_joint": 0.0,
                 "right_outer_knuckle_joint": 0.0,
+                "left_outer_finger_joint": 0.0,
+                "right_outer_finger_joint": 0.0,
             },
         ),
         actuators={
@@ -286,7 +295,7 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
                 stiffness=150.0,
                 damping=18.0,
             ),
-            # Gripper actuators (updated for actual joint names)
+            # Gripper actuators (updated for new URDF with mimic joints)
             "gripper_drive": ImplicitActuatorCfg(
                 joint_names_expr=["finger_joint"],
                 effort_limit_sim=1650.0,
@@ -294,19 +303,24 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
                 stiffness=17.0,
                 damping=0.02,
             ),
-            "gripper_finger": ImplicitActuatorCfg(
-                joint_names_expr=[".*_inner_finger_joint"],
-                effort_limit_sim=50.0,
+            # Inner finger and knuckle joints - follow main finger joint
+            "gripper_followers": ImplicitActuatorCfg(
+                joint_names_expr=[
+                    ".*_inner_finger_joint",
+                    ".*_outer_knuckle_joint",
+                ],
+                effort_limit_sim=200.0,
                 velocity_limit_sim=10.0,
-                stiffness=0.2,
-                damping=0.001,
+                stiffness=17.0,
+                damping=0.02,
             ),
-            "gripper_passive": ImplicitActuatorCfg(
-                joint_names_expr=[".*_inner_knuckle_joint", "right_outer_knuckle_joint"],
-                effort_limit_sim=1.0,
+            # Outer finger joints - very stiff to keep fingers parallel, but can adapt to round objects
+            "gripper_adaptive": ImplicitActuatorCfg(
+                joint_names_expr=[".*_outer_finger_joint"],
+                effort_limit_sim=100.0,
                 velocity_limit_sim=10.0,
-                stiffness=0.0,
-                damping=0.0,
+                stiffness=500.0,  # Very high stiffness for parallel grip on flat objects
+                damping=10.0,  # High damping to prevent oscillation
             ),
         },
     )
@@ -363,20 +377,20 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
     )"""
 
     left_ee_frame = FrameTransformerCfg(
-        prim_path="{ENV_REGEX_NS}/LeftArm/base_link_inertia",  
+        prim_path="{ENV_REGEX_NS}/LeftArm/ur5e/base_link",
         target_frames=[
             FrameTransformerCfg.FrameCfg(
-                prim_path="{ENV_REGEX_NS}/LeftArm/ee_link/robotiq_arg2f_base_link",
+                prim_path="{ENV_REGEX_NS}/LeftArm/ur5e/Gripper/ee_link/robotiq_base_link",
                 name="left_end_effector",
             ),
         ],
     )
 
     right_ee_frame = FrameTransformerCfg(
-        prim_path="{ENV_REGEX_NS}/RightArm/base_link_inertia",
+        prim_path="{ENV_REGEX_NS}/RightArm/ur5e/base_link",
         target_frames=[
             FrameTransformerCfg.FrameCfg(
-                prim_path="{ENV_REGEX_NS}/RightArm/ee_link/robotiq_arg2f_base_link",
+                prim_path="{ENV_REGEX_NS}/RightArm/ur5e/Gripper/ee_link/robotiq_base_link",
                 name="right_end_effector",
             ),
         ],
@@ -384,11 +398,11 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
 
     # Control point frames for visualization (configured in __post_init__)
     left_control_frame = FrameTransformerCfg(
-        prim_path="{ENV_REGEX_NS}/LeftArm/base_link_inertia",
+        prim_path="{ENV_REGEX_NS}/LeftArm/ur5e/base_link",
         debug_vis=False,  # Will be enabled in __post_init__
         target_frames=[
             FrameTransformerCfg.FrameCfg(
-                prim_path="{ENV_REGEX_NS}/LeftArm/ee_link/tcp_link",
+                prim_path="{ENV_REGEX_NS}/LeftArm/ur5e/Gripper/ee_link/tcp_link",
                 name="left_control_point",
                 offset=OffsetCfg(
                     pos=(0.0, 0.0, 0.0),
@@ -399,11 +413,11 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
     )
 
     right_control_frame = FrameTransformerCfg(
-        prim_path="{ENV_REGEX_NS}/RightArm/base_link_inertia",
+        prim_path="{ENV_REGEX_NS}/RightArm/ur5e/base_link",
         debug_vis=False,  # Will be enabled in __post_init__
         target_frames=[
             FrameTransformerCfg.FrameCfg(
-                prim_path="{ENV_REGEX_NS}/RightArm/ee_link/tcp_link",
+                prim_path="{ENV_REGEX_NS}/RightArm/ur5e/Gripper/ee_link/tcp_link",
                 name="right_control_point",
                 offset=OffsetCfg(
                     pos=(0.0, 0.0, 0.0),
@@ -446,11 +460,33 @@ class ActionsCfg:
 
     # Left gripper binary action (1 DOF: open/close) - index 6
     # NOTE: Order matters! Must come after left_arm to match retargeter output
+    # Explicitly control all gripper joints to enforce mimic relationships
     left_gripper_action: BinaryJointPositionActionCfg = BinaryJointPositionActionCfg(
         asset_name="left_arm",
-        joint_names=["finger_joint"],
-        open_command_expr={"finger_joint": 0.0},  # Open position
-        close_command_expr={"finger_joint": 0.7},  # Close position (adjust based on gripper)
+        joint_names=[
+            "finger_joint",
+            "left_inner_finger_joint",
+            "right_inner_finger_joint",
+            "right_outer_knuckle_joint",
+            "left_outer_finger_joint",
+            "right_outer_finger_joint",
+        ],
+        open_command_expr={
+            "finger_joint": 0.0,
+            "left_inner_finger_joint": 0.0,
+            "right_inner_finger_joint": 0.0,
+            "right_outer_knuckle_joint": 0.0,
+            "left_outer_finger_joint": 0.0,
+            "right_outer_finger_joint": 0.0,
+        },
+        close_command_expr={
+            "finger_joint": 0.7,
+            "left_inner_finger_joint": 0.7,
+            "right_inner_finger_joint": 0.7,
+            "right_outer_knuckle_joint": -0.7,
+            "left_outer_finger_joint": -0.7,
+            "right_outer_finger_joint": -0.7,
+        },
     )
 
     # Right arm RMPFlow action (6 DOF: 3 pos + 3 rot) - indices 7-12
@@ -469,11 +505,33 @@ class ActionsCfg:
     )
 
     # Right gripper binary action (1 DOF: open/close) - index 13
+    # Explicitly control all gripper joints to enforce mimic relationships
     right_gripper_action: BinaryJointPositionActionCfg = BinaryJointPositionActionCfg(
         asset_name="right_arm",
-        joint_names=["finger_joint"],
-        open_command_expr={"finger_joint": 0.0},  # Open position
-        close_command_expr={"finger_joint": 0.7},  # Close position (adjust based on gripper)
+        joint_names=[
+            "finger_joint",
+            "left_inner_finger_joint",
+            "right_inner_finger_joint",
+            "right_outer_knuckle_joint",
+            "left_outer_finger_joint",
+            "right_outer_finger_joint",
+        ],
+        open_command_expr={
+            "finger_joint": 0.0,
+            "left_inner_finger_joint": 0.0,
+            "right_inner_finger_joint": 0.0,
+            "right_outer_knuckle_joint": 0.0,
+            "left_outer_finger_joint": 0.0,
+            "right_outer_finger_joint": 0.0,
+        },
+        close_command_expr={
+            "finger_joint": 0.7,
+            "left_inner_finger_joint": 0.7,
+            "right_inner_finger_joint": 0.7,
+            "right_outer_knuckle_joint": -0.7,
+            "left_outer_finger_joint": -0.7,
+            "right_outer_finger_joint": -0.7,
+        },
     )
 
 @configclass
@@ -492,7 +550,7 @@ class ObservationsCfg:
         # Left arm observations
         left_ee_pose = ObsTerm(
             func=mdp.body_pose_w,
-            params={"asset_cfg": SceneEntityCfg("left_arm", body_names=["robotiq_arg2f_base_link"])},
+            params={"asset_cfg": SceneEntityCfg("left_arm", body_names=["robotiq_base_link"])},
         )
         left_joint_pos = ObsTerm(
             func=mdp.joint_pos_rel,
@@ -510,7 +568,7 @@ class ObservationsCfg:
         # Right arm observations
         right_ee_pose = ObsTerm(
             func=mdp.body_pose_w,
-            params={"asset_cfg": SceneEntityCfg("right_arm", body_names=["robotiq_arg2f_base_link"])},
+            params={"asset_cfg": SceneEntityCfg("right_arm", body_names=["robotiq_base_link"])},
         )
         right_joint_pos = ObsTerm(
             func=mdp.joint_pos_rel,
