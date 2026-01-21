@@ -96,7 +96,7 @@ body_collision_controllers:
     radius: .04
   - name: wrist_3_link
     radius: .04
-  - name: robotiq_base_link
+  - name: robotiq_2f_140_robotiq_arg2f_base_link
     radius: .055  # Gripper base body
   - name: tcp_link
     radius: .06  # TCP at gripper fingers (larger to account for finger geometry)

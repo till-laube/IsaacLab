@@ -183,13 +183,11 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
                 "wrist_3_joint": -0.78539,
                 # Gripper joints - open position
                 "finger_joint": 0.0,
+                "left_inner_knuckle_joint": 0.0,
+                "right_inner_knuckle_joint": 0.0,
+                "right_outer_knuckle_joint": 0.0,
                 "left_inner_finger_joint": 0.0,
                 "right_inner_finger_joint": 0.0,
-                "right_outer_knuckle_joint": 0.0,
-                "left_outer_finger_joint": 0.0,
-                "right_outer_finger_joint": 0.0,
-                #"left_inner_finger_pad_joint": 0.0,
-                #"right_inner_finger_pad_joint": 0.0,
             },
         ),
         actuators={
@@ -231,12 +229,19 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
             "gripper_finger": ImplicitActuatorCfg(
                 joint_names_expr=[
                     ".*_inner_finger_joint",
-                    ".*_inner_finger_pad_joint",
                 ],
                 effort_limit_sim=50.0,
                 velocity_limit_sim=10.0,
                 stiffness=0.0,
                 damping=1.0,
+            ),
+            # Inner knuckle joints - passive joints in gripper mechanism
+            "gripper_knuckle": ImplicitActuatorCfg(
+                joint_names_expr=[".*_inner_knuckle_joint"],
+                effort_limit_sim=100.0,
+                velocity_limit_sim=10.0,
+                stiffness=0.0,  # Passive joints
+                damping=0.0,
             ),
         },
     )
@@ -271,11 +276,11 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
                 "wrist_3_joint": 0.78539,
                 # Gripper joints - open position
                 "finger_joint": 0.0,
+                "left_inner_knuckle_joint": 0.0,
+                "right_inner_knuckle_joint": 0.0,
+                "right_outer_knuckle_joint": 0.0,
                 "left_inner_finger_joint": 0.0,
                 "right_inner_finger_joint": 0.0,
-                "right_outer_knuckle_joint": 0.0,
-                "left_outer_finger_joint": 0.0,
-                "right_outer_finger_joint": 0.0,
             },
         ),
         actuators={
@@ -314,13 +319,13 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
                 stiffness=17.0,
                 damping=0.02,
             ),
-            # Outer finger joints - very stiff to keep fingers parallel, but can adapt to round objects
-            "gripper_adaptive": ImplicitActuatorCfg(
-                joint_names_expr=[".*_outer_finger_joint"],
+            # Inner knuckle joints - follow main finger joint
+            "gripper_knuckle": ImplicitActuatorCfg(
+                joint_names_expr=[".*_inner_knuckle_joint"],
                 effort_limit_sim=100.0,
                 velocity_limit_sim=10.0,
-                stiffness=500.0,  # Very high stiffness for parallel grip on flat objects
-                damping=10.0,  # High damping to prevent oscillation
+                stiffness=0.0,  # Passive joints
+                damping=0.0,
             ),
         },
     )
@@ -380,7 +385,7 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
         prim_path="{ENV_REGEX_NS}/LeftArm/ur5e/base_link",
         target_frames=[
             FrameTransformerCfg.FrameCfg(
-                prim_path="{ENV_REGEX_NS}/LeftArm/ur5e/Gripper/ee_link/robotiq_base_link",
+                prim_path="{ENV_REGEX_NS}/LeftArm/ur5e/Gripper/robotiq_2f_140/robotiq_arg2f_base_link",
                 name="left_end_effector",
             ),
         ],
@@ -390,7 +395,7 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
         prim_path="{ENV_REGEX_NS}/RightArm/ur5e/base_link",
         target_frames=[
             FrameTransformerCfg.FrameCfg(
-                prim_path="{ENV_REGEX_NS}/RightArm/ur5e/Gripper/ee_link/robotiq_base_link",
+                prim_path="{ENV_REGEX_NS}/RightArm/ur5e/Gripper/robotiq_2f_140/robotiq_arg2f_base_link",
                 name="right_end_effector",
             ),
         ],
@@ -402,7 +407,7 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
         debug_vis=False,  # Will be enabled in __post_init__
         target_frames=[
             FrameTransformerCfg.FrameCfg(
-                prim_path="{ENV_REGEX_NS}/LeftArm/ur5e/Gripper/ee_link/tcp_link",
+                prim_path="{ENV_REGEX_NS}/LeftArm/ur5e/Gripper/robotiq_2f_140/tcp_link",
                 name="left_control_point",
                 offset=OffsetCfg(
                     pos=(0.0, 0.0, 0.0),
@@ -417,7 +422,7 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
         debug_vis=False,  # Will be enabled in __post_init__
         target_frames=[
             FrameTransformerCfg.FrameCfg(
-                prim_path="{ENV_REGEX_NS}/RightArm/ur5e/Gripper/ee_link/tcp_link",
+                prim_path="{ENV_REGEX_NS}/RightArm/ur5e/Gripper/robotiq_2f_140/tcp_link",
                 name="right_control_point",
                 offset=OffsetCfg(
                     pos=(0.0, 0.0, 0.0),
@@ -465,27 +470,27 @@ class ActionsCfg:
         asset_name="left_arm",
         joint_names=[
             "finger_joint",
+            "left_inner_knuckle_joint",
+            "right_inner_knuckle_joint",
+            "right_outer_knuckle_joint",
             "left_inner_finger_joint",
             "right_inner_finger_joint",
-            "right_outer_knuckle_joint",
-            "left_outer_finger_joint",
-            "right_outer_finger_joint",
         ],
         open_command_expr={
             "finger_joint": 0.0,
+            "left_inner_knuckle_joint": 0.0,
+            "right_inner_knuckle_joint": 0.0,
+            "right_outer_knuckle_joint": 0.0,
             "left_inner_finger_joint": 0.0,
             "right_inner_finger_joint": 0.0,
-            "right_outer_knuckle_joint": 0.0,
-            "left_outer_finger_joint": 0.0,
-            "right_outer_finger_joint": 0.0,
         },
         close_command_expr={
             "finger_joint": 0.7,
-            "left_inner_finger_joint": 0.7,
-            "right_inner_finger_joint": 0.7,
+            "left_inner_knuckle_joint": 0.7,
+            "right_inner_knuckle_joint": 0.7,
             "right_outer_knuckle_joint": -0.7,
-            "left_outer_finger_joint": -0.7,
-            "right_outer_finger_joint": -0.7,
+            "left_inner_finger_joint": -0.7,
+            "right_inner_finger_joint": -0.7,
         },
     )
 
@@ -510,27 +515,27 @@ class ActionsCfg:
         asset_name="right_arm",
         joint_names=[
             "finger_joint",
+            "left_inner_knuckle_joint",
+            "right_inner_knuckle_joint",
+            "right_outer_knuckle_joint",
             "left_inner_finger_joint",
             "right_inner_finger_joint",
-            "right_outer_knuckle_joint",
-            "left_outer_finger_joint",
-            "right_outer_finger_joint",
         ],
         open_command_expr={
             "finger_joint": 0.0,
+            "left_inner_knuckle_joint": 0.0,
+            "right_inner_knuckle_joint": 0.0,
+            "right_outer_knuckle_joint": 0.0,
             "left_inner_finger_joint": 0.0,
             "right_inner_finger_joint": 0.0,
-            "right_outer_knuckle_joint": 0.0,
-            "left_outer_finger_joint": 0.0,
-            "right_outer_finger_joint": 0.0,
         },
         close_command_expr={
             "finger_joint": 0.7,
-            "left_inner_finger_joint": 0.7,
-            "right_inner_finger_joint": 0.7,
+            "left_inner_knuckle_joint": 0.7,
+            "right_inner_knuckle_joint": 0.7,
             "right_outer_knuckle_joint": -0.7,
-            "left_outer_finger_joint": -0.7,
-            "right_outer_finger_joint": -0.7,
+            "left_inner_finger_joint": -0.7,
+            "right_inner_finger_joint": -0.7,
         },
     )
 
@@ -550,7 +555,7 @@ class ObservationsCfg:
         # Left arm observations
         left_ee_pose = ObsTerm(
             func=mdp.body_pose_w,
-            params={"asset_cfg": SceneEntityCfg("left_arm", body_names=["robotiq_base_link"])},
+            params={"asset_cfg": SceneEntityCfg("left_arm", body_names=["robotiq_arg2f_base_link"])},
         )
         left_joint_pos = ObsTerm(
             func=mdp.joint_pos_rel,
@@ -568,7 +573,7 @@ class ObservationsCfg:
         # Right arm observations
         right_ee_pose = ObsTerm(
             func=mdp.body_pose_w,
-            params={"asset_cfg": SceneEntityCfg("right_arm", body_names=["robotiq_base_link"])},
+            params={"asset_cfg": SceneEntityCfg("right_arm", body_names=["robotiq_arg2f_base_link"])},
         )
         right_joint_pos = ObsTerm(
             func=mdp.joint_pos_rel,

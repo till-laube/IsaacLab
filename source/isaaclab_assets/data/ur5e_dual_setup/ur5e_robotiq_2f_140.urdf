@@ -1,10 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<robot name="ur5e_robotiq_2f_140">
-  <joint name="AssemblerFixedJoint" type="fixed">
-    <origin xyz="-0. -0. -0." rpy="0. 0. 0."/>
-    <parent link="wrist_3_link"/>
-    <child link="robotiq_base_link"/>
-  </joint>
+<robot name="ur5e_robotiq_2f_140_toolchanger_c">
   <joint name="elbow_joint" type="revolute">
     <origin xyz="-0.425 0. 0. " rpy="0. 0. 0."/>
     <parent link="upper_arm_link"/>
@@ -13,65 +8,71 @@
     <limit lower="-3.1415927" upper="3.1415927" effort="150." velocity="3.1415927"/>
   </joint>
   <joint name="finger_joint" type="revolute">
-    <origin xyz="0 -0.0306 0.0546" rpy="1.5707 0 -1.5707"/>
-    <parent link="robotiq_base_link"/>
+    <origin xyz="0. -0.030601 0.054905" rpy="-2.2957964 -0. -3.1415925"/>
+    <parent link="robotiq_2f_140_robotiq_arg2f_base_link"/>
     <child link="left_outer_knuckle"/>
-    <axis xyz="0 0 1"/>
-    <limit lower="0" upper="1.308996" effort="1000" velocity="2.0"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="0." upper="0.7" effort="1000." velocity="1.9999999"/>
   </joint>
-  <joint name="gripper_tcp_joint" type="fixed">
-    <origin xyz="0. 0. 0.2" rpy="-3.1415927 -1.5707964 0. "/>
-    <parent link="robotiq_base_link"/>
+  <joint name="gripper_base_tcp_joint" type="fixed">
+    <origin xyz="0. -0. 0.2" rpy="1.5707964 -0. 1.5707964"/>
+    <parent link="robotiq_2f_140_robotiq_arg2f_base_link"/>
     <child link="tcp_link"/>
   </joint>
+  <joint name="left_inner_finger_joint" type="revolute">
+    <origin xyz="0. 0.0817554 -0.0282203" rpy="-0.725 0. 0. "/>
+    <parent link="left_outer_finger"/>
+    <child link="left_inner_finger"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.14" upper="0.84" effort="0." velocity="17453.2925199"/>
+  </joint>
   <joint name="left_inner_knuckle_joint" type="revolute">
-    <origin xyz="0 -0.0127 0.0614" rpy="1.5707 0 -1.5707"/>
-    <parent link="robotiq_base_link"/>
+    <origin xyz="0. -0.0127 0.06142" rpy="2.2957964 0. 0.0000001"/>
+    <parent link="robotiq_2f_140_robotiq_arg2f_base_link"/>
     <child link="left_inner_knuckle"/>
-    <axis xyz="0 0 1"/>
-    <limit lower="0" upper="1.308996" effort="100" velocity="2.0"/>
-    <mimic joint="finger_joint" multiplier="1.0" offset="0.0"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.84" upper="0.14" effort="0." velocity="17453.2925199"/>
   </joint>
   <joint name="left_outer_finger_joint" type="fixed">
-    <origin xyz="0 0.0315 -0.0041" rpy="0 0 0"/>
+    <origin xyz="0. -0.01822 0.0260018" rpy="-0. 0. 3.1415927"/>
     <parent link="left_outer_knuckle"/>
     <child link="left_outer_finger"/>
   </joint>
-  <joint name="left_inner_finger_pad_joint" type="revolute">
-    <origin xyz="0 0.0454 0.0125" rpy="0 0 0"/> 
-    <parent link="left_outer_finger"/>
-    <child link="left_inner_finger"/> <axis xyz="0 0 1"/>
-    <limit lower="-3.1415" upper="3.1415" effort="100" velocity="2.0"/>
-    <mimic joint="finger_joint" multiplier="-1.0" offset="0.0"/>
+  <joint name="pdc_gripper_joint" type="fixed">
+    <origin xyz="-0. 0.0139 0. " rpy="-1.5519305 -1.5707947 -0.0188656"/>
+    <parent link="pdc_connector_link"/>
+    <child link="robotiq_2f_140_robotiq_arg2f_base_link"/>
+  </joint>
+  <joint name="right_inner_finger_joint" type="revolute">
+    <origin xyz="0. 0.0817554 -0.0282203" rpy="-0.725 0. 0. "/>
+    <parent link="right_outer_finger"/>
+    <child link="right_inner_finger"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.14" upper="0.84" effort="0." velocity="17453.2925199"/>
   </joint>
   <joint name="right_inner_knuckle_joint" type="revolute">
-    <origin xyz="0. 0.0127 0.061178" rpy="-1.5707964 0. 1.5707964"/>
-    <parent link="robotiq_base_link"/>
+    <origin xyz="-0. 0.0127 0.06142" rpy="2.2957964 -0. 3.1415927"/>
+    <parent link="robotiq_2f_140_robotiq_arg2f_base_link"/>
     <child link="right_inner_knuckle"/>
-    <axis xyz="0. 0. 1."/>
-    <limit lower="0.0" upper="1.308996" effort="10." velocity="2.268928"/>
-    <mimic joint="finger_joint" multiplier="-1.0" offset="0.0"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.84" upper="0.14" effort="0." velocity="17453.2925199"/>
   </joint>
   <joint name="right_outer_finger_joint" type="fixed">
-    <origin xyz="0.0314249 -0.0045322 0. " rpy="-3.1415927 0. -3.1415927"/>
+    <origin xyz="0. 0.01822 0.0260018" rpy="0. 0. 0."/>
     <parent link="right_outer_knuckle"/>
     <child link="right_outer_finger"/>
-    <axis xyz="0. 0. 1."/>
   </joint>
   <joint name="right_outer_knuckle_joint" type="revolute">
-    <origin xyz="0. 0.0306011 0.0546625" rpy="1.5707964 0. 1.5707964"/>
-    <parent link="robotiq_base_link"/>
+    <origin xyz="-0. 0.030601 0.054905" rpy="2.2957964 -0. -3.1415925"/>
+    <parent link="robotiq_2f_140_robotiq_arg2f_base_link"/>
     <child link="right_outer_knuckle"/>
-    <axis xyz="0. 0. 1."/>
-    <limit lower="0." upper="1.308996" effort="10." velocity="2.268928"/>
-    <mimic joint="finger_joint" multiplier="1.0" offset="0.0"/>
+    <axis xyz="1. 0. 0."/>
+    <limit lower="-0.84" upper="0.14" effort="0." velocity="17453.2925199"/>
   </joint>
-  <joint name="right_inner_finger_pad_joint" type="revolute">
-    <origin xyz="0.045 -0.012 0" rpy="0 0 0"/> <parent link="right_outer_finger"/>
-    <child link="right_inner_finger"/>
-    <axis xyz="0 0 1"/>
-    <limit lower="-3.1415" upper="3.1415" effort="100" velocity="2.0"/>
-    <mimic joint="finger_joint" multiplier="-1.0" offset="0.0"/>
+  <joint name="robot_gripper_joint" type="fixed">
+    <origin xyz="-0. -0. -0.0000001" rpy="-1.5707963 -1.5707964 0. "/>
+    <parent link="wrist_3_link"/>
+    <child link="tool_changer_robot_side_link"/>
   </joint>
   <joint name="root_joint" type="fixed">
     <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
@@ -91,6 +92,16 @@
     <child link="shoulder_link"/>
     <axis xyz="0. 0. 1."/>
     <limit lower="-6.2831853" upper="6.2831853" effort="150." velocity="3.1415927"/>
+  </joint>
+  <joint name="tool_changer_joint" type="fixed">
+    <origin xyz="0.0243747 -0.0000721 0.0004423" rpy="-3.1415925 -0.0006422 -1.570829 "/>
+    <parent link="tool_changer_robot_side_link"/>
+    <child link="tool_changer_tool_side_link"/>
+  </joint>
+  <joint name="tool_changer_tool_pdc_joint" type="fixed">
+    <origin xyz="-0.0000724 -0.0001253 0.0004423" rpy="3.1415925 -0.0006406 -0.0000326"/>
+    <parent link="tool_changer_tool_side_link"/>
+    <child link="pdc_connector_link"/>
   </joint>
   <joint name="wrist_1_joint" type="revolute">
     <origin xyz="-0.3922 0. 0.1333" rpy="0. 0. 0."/>
@@ -141,191 +152,276 @@
   </link>
   <link name="left_inner_finger">
     <inertial>
-      <origin xyz="0.16089 0.08148 -0.0000015" rpy="0. 0. 0."/>
-      <mass value="0.0498344"/>
-      <inertia ixx="0.0000038" ixy="0.0000034" ixz="0." iyy="0.0000184" iyz="-0." izz="0.0000171"/>
+      <origin xyz="0.0003 0.0160078 -0.0136946" rpy="0. 0. 0."/>
+      <mass value="0.0104003"/>
+      <inertia ixx="0.0000027" ixy="0." ixz="0." iyy="0.0000008" iyz="0.0000007" izz="0.0000023"/>
     </inertial>
     <visual>
-      <origin xyz="0.0974562 0.1292712 0. " rpy="-3.1415927 0. -0. "/>
+      <origin xyz="0. 0. 0." rpy="-0. 0. 0."/>
       <geometry>
-        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_inner_finger_Fingertip_01_Fingertip.obj" scale="1. 1. 1."/>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_inner_finger_visuals_robotiq_arg2f_140_inner_finger_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
     </visual>
     <visual>
-      <origin xyz="0.0974562 0.1292712 0. " rpy="-3.1415927 0. -0. "/>
+      <origin xyz="0. 0.0457554 -0.0272203" rpy="-0. 0. 0."/>
       <geometry>
-        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_inner_finger_Finger4_01_Finger4.obj" scale="1. 1. 1."/>
+        <box size="0.027 0.065 0.0075"/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="-0. 0. 0."/>
+      <geometry>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_inner_finger_collisions_robotiq_arg2f_140_inner_finger_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0.0457554 -0.0272203" rpy="-0. 0. 0."/>
+      <geometry>
+        <box size="0.03 0.07 0.0075"/>
       </geometry>
     </visual>
     <collision>
-      <origin xyz="0.0974562 0.1292712 0. " rpy="-3.1415927 0. -0. "/>
+      <origin xyz="0. 0. 0." rpy="-0. 0. 0."/>
       <geometry>
-        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_inner_finger_Fingertip_01_Fingertip.obj" scale="1. 1. 1."/>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_inner_finger_collisions_robotiq_arg2f_140_inner_finger_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
     </collision>
     <collision>
-      <origin xyz="0.0974562 0.1292712 0. " rpy="-3.1415927 0. -0. "/>
+      <origin xyz="0. 0.0457554 -0.0272203" rpy="-0. 0. 0."/>
       <geometry>
-        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_inner_finger_Finger4_01_Finger4.obj" scale="1. 1. 1."/>
+        <box size="0.03 0.07 0.0075"/>
       </geometry>
     </collision>
   </link>
   <link name="left_inner_knuckle">
     <inertial>
-      <origin xyz="-0.048258 0.1010117 -0. " rpy="0. 0. 0."/>
-      <mass value="0.0681122"/>
-      <inertia ixx="0.0000329" ixy="0.0000216" ixz="-0.0000001" iyy="0.0000255" iyz="-0." izz="0.0000454"/>
+      <origin xyz="0.000123 0.0507851 0.0010397" rpy="0. 0. 0."/>
+      <mass value="0.0271177"/>
+      <inertia ixx="0.0000262" ixy="-0.0000002" ixz="-0." iyy="0.0000028" iyz="-0.0000005" izz="0.0000284"/>
     </inertial>
     <visual>
-      <origin xyz="0.0127 0.06142 0. " rpy="3.1415927 0. 0. "/>
+      <origin xyz="0. 0. 0." rpy="-0. 0. 0."/>
       <geometry>
-        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_inner_knuckle_Finger3.obj" scale="1. 1. 1."/>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_inner_knuckle_visuals_robotiq_arg2f_140_inner_knuckle_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="-0. 0. 0."/>
+      <geometry>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_inner_knuckle_collisions_robotiq_arg2f_140_inner_knuckle_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
     </visual>
     <collision>
-      <origin xyz="0.0127 0.06142 0. " rpy="3.1415927 0. 0. "/>
+      <origin xyz="0. 0. 0." rpy="-0. 0. 0."/>
       <geometry>
-        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_inner_knuckle_Finger3.obj" scale="1. 1. 1."/>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_inner_knuckle_collisions_robotiq_arg2f_140_inner_knuckle_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
     </collision>
   </link>
   <link name="left_outer_finger">
     <inertial>
-      <origin xyz="-0.076708 0.0845727 0.0000031" rpy="0. 0. 0."/>
-      <mass value="0.0770643"/>
-      <inertia ixx="0.0000453" ixy="0.0000217" ixz="-0." iyy="0.0000191" iyz="-0." izz="0.0000535"/>
+      <origin xyz="0.0003012 0.0373908 -0.0208027" rpy="0. 0. 0."/>
+      <mass value="0.0226142"/>
+      <inertia ixx="0.0000153" ixy="0." ixz="-0." iyy="0.0000062" iyz="0.0000068" izz="0.0000116"/>
     </inertial>
     <visual>
-      <origin xyz="0.062026 -0.0503723 0. " rpy="0. 0. -0."/>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
       <geometry>
-        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_outer_finger_Finger2.obj" scale="1. 1. 1."/>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_outer_finger_visuals_robotiq_arg2f_140_outer_finger_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_outer_finger_collisions_robotiq_arg2f_140_outer_finger_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
     </visual>
     <collision>
-      <origin xyz="0.062026 -0.0503723 0. " rpy="0. 0. -0."/>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
       <geometry>
-        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_outer_finger_Finger2.obj" scale="1. 1. 1."/>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_outer_finger_collisions_robotiq_arg2f_140_outer_finger_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
     </collision>
   </link>
   <link name="left_outer_knuckle">
     <inertial>
-      <origin xyz="-0.0528938 0.0531834 0. " rpy="0. 0. 0."/>
-      <mass value="0.0091633"/>
-      <inertia ixx="0.0000002" ixy="0." ixz="0." iyy="0.0000007" iyz="0." izz="0.0000008"/>
+      <origin xyz="-0.0002 0.0199436 0.0292245" rpy="0. 0. 0."/>
+      <mass value="0.008532"/>
+      <inertia ixx="0.0000029" ixy="0." ixz="0." iyy="0.0000019" iyz="-0.0000012" izz="0.0000012"/>
     </inertial>
     <visual>
-      <origin xyz="-0.0306011 -0.0549045 0. " rpy="3.1415927 0. 3.1415927"/>
+      <origin xyz="0. 0. 0." rpy="-0. 0. 3.1415927"/>
       <geometry>
-        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_outer_knuckle_Finger1.obj" scale="1. 1. 1."/>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_outer_knuckle_visuals_robotiq_arg2f_140_outer_knuckle_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="-0. 0. 3.1415927"/>
+      <geometry>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_outer_knuckle_collisions_robotiq_arg2f_140_outer_knuckle_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
     </visual>
     <collision>
-      <origin xyz="-0.0306011 -0.0549045 0. " rpy="3.1415927 0. 3.1415927"/>
+      <origin xyz="0. 0. 0." rpy="-0. 0. 3.1415927"/>
       <geometry>
-        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_outer_knuckle_Finger1.obj" scale="1. 1. 1."/>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_outer_knuckle_collisions_robotiq_arg2f_140_outer_knuckle_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="pdc_connector_link">
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/pdc_connector_link_mesh.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/pdc_connector_link_mesh.obj" scale="1. 1. 1."/>
       </geometry>
     </collision>
   </link>
   <link name="right_inner_finger">
     <inertial>
-      <origin xyz="0.1608882 -0.0814771 -0.0000015" rpy="0. 0. 0."/>
-      <mass value="0.0498344"/>
-      <inertia ixx="0.0000038" ixy="-0.0000034" ixz="0." iyy="0.0000184" iyz="0." izz="0.0000171"/>
+      <origin xyz="0.0003 0.0160078 -0.0136946" rpy="0. 0. 0."/>
+      <mass value="0.0104003"/>
+      <inertia ixx="0.0000027" ixy="0." ixz="0." iyy="0.0000008" iyz="0.0000007" izz="0.0000023"/>
     </inertial>
     <visual>
-      <origin xyz="0.0974562 0.1292712 0. " rpy="-3.1415927 0. -0. "/>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
       <geometry>
-        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_inner_finger_Finger4_01_Finger4.obj" scale="1. 1. 1."/>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_inner_finger_visuals_robotiq_arg2f_140_inner_finger_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
     </visual>
     <visual>
-      <origin xyz="0.0974562 0.1292712 0. " rpy="-3.1415927 0. -0. "/>
+      <origin xyz="0. 0.0457554 -0.0272203" rpy="0. 0. 0."/>
       <geometry>
-        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_inner_finger_Fingertip_01_Fingertip.obj" scale="1. 1. 1."/>
+        <box size="0.027 0.065 0.0075"/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_inner_finger_collisions_robotiq_arg2f_140_inner_finger_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0.0457554 -0.0272203" rpy="0. 0. 0."/>
+      <geometry>
+        <box size="0.03 0.07 0.0075"/>
       </geometry>
     </visual>
     <collision>
-      <origin xyz="0.0974562 0.1292712 0. " rpy="-3.1415927 0. -0. "/>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
       <geometry>
-        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_inner_finger_Finger4_01_Finger4.obj" scale="1. 1. 1."/>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_inner_finger_collisions_robotiq_arg2f_140_inner_finger_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
     </collision>
     <collision>
-      <origin xyz="0.0974562 0.1292712 0. " rpy="-3.1415927 0. -0. "/>
+      <origin xyz="0. 0.0457554 -0.0272203" rpy="0. 0. 0."/>
       <geometry>
-        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_inner_finger_Fingertip_01_Fingertip.obj" scale="1. 1. 1."/>
+        <box size="0.03 0.07 0.0075"/>
       </geometry>
     </collision>
   </link>
   <link name="right_inner_knuckle">
     <inertial>
-      <origin xyz="-0.048258 0.1010117 -0. " rpy="0. 0. 0."/>
-      <mass value="0.0681122"/>
-      <inertia ixx="0.0000329" ixy="0.0000216" ixz="-0.0000001" iyy="0.0000255" iyz="-0." izz="0.0000454"/>
+      <origin xyz="0.000123 0.0507851 0.0010397" rpy="0. 0. 0."/>
+      <mass value="0.0271177"/>
+      <inertia ixx="0.0000262" ixy="-0.0000002" ixz="-0." iyy="0.0000028" iyz="-0.0000005" izz="0.0000284"/>
     </inertial>
     <visual>
-      <origin xyz="-0.0127 0.06142 0. " rpy="0. 0. 3.1415927"/>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
       <geometry>
-        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_inner_knuckle_Finger3.obj" scale="1. 1. 1."/>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_inner_knuckle_visuals_robotiq_arg2f_140_inner_knuckle_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_inner_knuckle_collisions_robotiq_arg2f_140_inner_knuckle_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
     </visual>
     <collision>
-      <origin xyz="-0.0127 0.06142 0. " rpy="0. 0. 3.1415927"/>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
       <geometry>
-        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_inner_knuckle_Finger3.obj" scale="1. 1. 1."/>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_inner_knuckle_collisions_robotiq_arg2f_140_inner_knuckle_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
     </collision>
   </link>
   <link name="right_outer_finger">
     <inertial>
-      <origin xyz="-0.076708 0.0845727 0.0000031" rpy="0. 0. 0."/>
-      <mass value="0.0770643"/>
-      <inertia ixx="0.0000453" ixy="0.0000217" ixz="-0." iyy="0.0000191" iyz="-0." izz="0.0000535"/>
+      <origin xyz="0.0003012 0.0373908 -0.0208027" rpy="0. 0. 0."/>
+      <mass value="0.0226142"/>
+      <inertia ixx="0.0000153" ixy="0." ixz="-0." iyy="0.0000062" iyz="0.0000068" izz="0.0000116"/>
     </inertial>
     <visual>
-      <origin xyz="0.062026 -0.0503723 0. " rpy="0. 0. -0."/>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
       <geometry>
-        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_outer_finger_Finger2.obj" scale="1. 1. 1."/>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_outer_finger_visuals_robotiq_arg2f_140_outer_finger_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_outer_finger_collisions_robotiq_arg2f_140_outer_finger_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
     </visual>
     <collision>
-      <origin xyz="0.062026 -0.0503723 0. " rpy="0. 0. -0."/>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
       <geometry>
-        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_outer_finger_Finger2.obj" scale="1. 1. 1."/>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_outer_finger_collisions_robotiq_arg2f_140_outer_finger_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
     </collision>
   </link>
   <link name="right_outer_knuckle">
     <inertial>
-      <origin xyz="-0.0528938 0.0531834 0. " rpy="0. 0. 0."/>
-      <mass value="0.0091633"/>
-      <inertia ixx="0.0000002" ixy="0." ixz="0." iyy="0.0000007" iyz="0." izz="0.0000008"/>
+      <origin xyz="-0.0002 0.0199436 0.0292245" rpy="0. 0. 0."/>
+      <mass value="0.008532"/>
+      <inertia ixx="0.0000029" ixy="0." ixz="0." iyy="0.0000019" iyz="-0.0000012" izz="0.0000012"/>
     </inertial>
     <visual>
-      <origin xyz="-0.0306011 -0.0549045 0. " rpy="-3.1415927 0. -3.1415927"/>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
       <geometry>
-        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_outer_knuckle_Finger1.obj" scale="1. 1. 1."/>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_outer_knuckle_visuals_robotiq_arg2f_140_outer_knuckle_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_outer_knuckle_collisions_robotiq_arg2f_140_outer_knuckle_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
     </visual>
     <collision>
-      <origin xyz="-0.0306011 -0.0549045 0. " rpy="-3.1415927 0. -3.1415927"/>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
       <geometry>
-        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_outer_knuckle_Finger1.obj" scale="1. 1. 1."/>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_outer_knuckle_collisions_robotiq_arg2f_140_outer_knuckle_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
     </collision>
   </link>
-  <link name="robotiq_base_link">
+  <link name="robotiq_2f_140_robotiq_arg2f_base_link">
+    <inertial>
+      <origin xyz="0.0000001 -0.0000047 0.03145 " rpy="0. 0. 0."/>
+      <mass value="0.22652"/>
+      <inertia ixx="0.0002" ixy="-0." ixz="-0." iyy="0.0001783" iyz="-0." izz="0.0001348"/>
+    </inertial>
     <visual>
-      <origin xyz="-0.000242 0. 0. " rpy="1.5707964 0. 1.5707964"/>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0.0000001"/>
       <geometry>
-        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/_F_Body.obj" scale="1. 1. 1."/>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/robotiq_2f_140_robotiq_arg2f_base_link_visuals_robotiq_arg2f_base_link_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0.0000001"/>
+      <geometry>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/robotiq_2f_140_robotiq_arg2f_base_link_collisions_robotiq_arg2f_base_link_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
     </visual>
     <collision>
-      <origin xyz="-0.000242 0. 0. " rpy="1.5707964 0. 1.5707964"/>
+      <origin xyz="0. 0. 0." rpy="0. 0. 0.0000001"/>
       <geometry>
-        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/_F_Body.obj" scale="1. 1. 1."/>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/robotiq_2f_140_robotiq_arg2f_base_link_collisions_robotiq_arg2f_base_link_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
     </collision>
   </link>
@@ -355,6 +451,34 @@
     </collision>
   </link>
   <link name="tcp_link"/>
+  <link name="tool_changer_robot_side_link">
+    <visual>
+      <origin xyz="0.0204 0. 0. " rpy="1.5707964 -1.5707963 0. "/>
+      <geometry>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/tool_changer_robot_side_link_mesh.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0.0204 0. 0. " rpy="1.5707964 -1.5707963 0. "/>
+      <geometry>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/tool_changer_robot_side_link_mesh.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="tool_changer_tool_side_link">
+    <visual>
+      <origin xyz="0. -0. -0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/tool_changer_tool_side_link_mesh.obj" scale="1. 1. 1."/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0. -0. -0." rpy="0. 0. 0."/>
+      <geometry>
+        <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/tool_changer_tool_side_link_mesh.obj" scale="1. 1. 1."/>
+      </geometry>
+    </collision>
+  </link>
   <link name="upper_arm_link">
     <inertial>
       <origin xyz="-0.2125 0. 0.138 " rpy="0. 0. 0."/>

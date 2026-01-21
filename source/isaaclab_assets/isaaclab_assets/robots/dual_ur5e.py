@@ -138,8 +138,8 @@ UR5E_ROBOTIQ_140_CFG.init_state.joint_pos = {
     # Gripper joints (open position)
     "finger_joint": 0.0,
     ".*_inner_finger_joint": 0.0,
-    ".*_inner_finger_knuckle_joint": 0.0,
-    ".*_outer_.*_joint": 0.0,
+    ".*_inner_knuckle_joint": 0.0,
+    ".*_outer_knuckle_joint": 0.0,
 }
 
 # Add gripper actuators to the existing arm actuators
@@ -166,7 +166,7 @@ UR5E_ROBOTIQ_140_CFG.actuators["gripper_finger"] = ImplicitActuatorCfg(
 
 # Gripper passive joints - set PD to zero for passive joints in closed-loop gripper
 UR5E_ROBOTIQ_140_CFG.actuators["gripper_passive"] = ImplicitActuatorCfg(
-    joint_names_expr=[".*_inner_finger_knuckle_joint", "right_outer_knuckle_joint"],
+    joint_names_expr=[".*_inner_knuckle_joint", ".*_outer_knuckle_joint"],
     effort_limit_sim=1.0,
     velocity_limit_sim=10.0,
     stiffness=0.0,
@@ -215,8 +215,8 @@ DUAL_UR5E_ROBOTIQ_140_CFG = ArticulationCfg(
             # Left gripper joints
             "left_finger_joint": 0.0,
             "left_.*_inner_finger_joint": 0.0,
-            "left_.*_inner_finger_knuckle_joint": 0.0,
-            "left_.*_outer_.*_joint": 0.0,
+            "left_.*_inner_knuckle_joint": 0.0,
+            "left_.*_outer_knuckle_joint": 0.0,
             # Right arm joints (prefixed with right_)
             "right_shoulder_pan_joint": 0.0,
             "right_shoulder_lift_joint": -1.5708,
@@ -227,8 +227,8 @@ DUAL_UR5E_ROBOTIQ_140_CFG = ArticulationCfg(
             # Right gripper joints
             "right_finger_joint": 0.0,
             "right_.*_inner_finger_joint": 0.0,
-            "right_.*_inner_finger_knuckle_joint": 0.0,
-            "right_.*_outer_.*_joint": 0.0,
+            "right_.*_inner_knuckle_joint": 0.0,
+            "right_.*_outer_knuckle_joint": 0.0,
         },
         # Base position - adjust based on your scene layout
         pos=(0.0, 0.0, 0.0),
@@ -277,7 +277,7 @@ DUAL_UR5E_ROBOTIQ_140_CFG = ArticulationCfg(
             armature=0.0,
         ),
         "left_gripper_passive": ImplicitActuatorCfg(
-            joint_names_expr=["left_.*_inner_finger_knuckle_joint", "left_.*_outer_knuckle_joint"],
+            joint_names_expr=["left_.*_inner_knuckle_joint", "left_.*_outer_knuckle_joint"],
             effort_limit_sim=1.0,
             velocity_limit_sim=10.0,
             stiffness=0.0,
@@ -327,7 +327,7 @@ DUAL_UR5E_ROBOTIQ_140_CFG = ArticulationCfg(
             armature=0.0,
         ),
         "right_gripper_passive": ImplicitActuatorCfg(
-            joint_names_expr=["right_.*_inner_finger_knuckle_joint", "right_.*_outer_knuckle_joint"],
+            joint_names_expr=["right_.*_inner_knuckle_joint", "right_.*_outer_knuckle_joint"],
             effort_limit_sim=1.0,
             velocity_limit_sim=10.0,
             stiffness=0.0,

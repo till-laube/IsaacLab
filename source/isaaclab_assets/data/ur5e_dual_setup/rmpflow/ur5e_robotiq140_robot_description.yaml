@@ -133,7 +133,7 @@ collision_spheres:
       "radius": 0.056
     - "center": [-0.082, 0.0, 0.011]
       "radius": 0.057
-  - robotiq_base_link:
+  - robotiq_2f_140_robotiq_arg2f_base_link:
     - "center": [0.0, 0.0, 0.05]
       "radius": 0.045
     - "center": [0.0, 0.0, 0.02]
