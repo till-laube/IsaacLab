@@ -9,12 +9,31 @@ import torch
 import numpy as np
 from scipy.spatial.transform import Rotation
 
+import omni.usd
+from pxr import UsdPhysics, Sdf
+
 import isaaclab.sim as sim_utils
 from isaaclab.envs import ManagerBasedRLEnv
 from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
 from .ur5e_dual_manipulation_env_cfg import Ur5eDualManipulationEnvCfg
+
+
+# Gripper links that should not collide with each other
+GRIPPER_COLLISION_LINKS = [
+    "robotiq_2f_140_robotiq_arg2f_base_link",
+    "left_outer_knuckle",
+    "left_inner_knuckle",
+    "left_outer_finger",
+    "left_inner_finger",
+    "left_inner_finger_pad",
+    "right_outer_knuckle",
+    "right_inner_knuckle",
+    "right_outer_finger",
+    "right_inner_finger",
+    "right_inner_finger_pad",
+]
 
 
 class Ur5eDualManipulationEnv(ManagerBasedRLEnv):
@@ -49,6 +68,9 @@ class Ur5eDualManipulationEnv(ManagerBasedRLEnv):
         """
         super().__init__(cfg, render_mode, **kwargs)
 
+        # Disable gripper self-collisions for both arms
+        self._disable_gripper_self_collisions()
+
         # Store settings
         self._enable_controller_viz = enable_controller_viz
         self._debug_controller_data = debug_controller_data
@@ -62,6 +84,97 @@ class Ur5eDualManipulationEnv(ManagerBasedRLEnv):
         # These show the controller orientation at the TCP location
         if self._enable_controller_viz:
             self._create_controller_visualizations()
+
+    def _disable_gripper_self_collisions(self):
+        """Disable collisions between gripper parts while keeping arm self-collisions enabled.
+
+        This uses PhysX's filtered pairs API to explicitly disable collisions between
+        specific pairs of collision geometries within the gripper mechanism.
+        """
+        stage = omni.usd.get_context().get_stage()
+
+        # Process both arms
+        arm_prim_paths = [
+            "/World/envs/env_0/LeftArm/ur5e/Gripper/robotiq_2f_140",
+            "/World/envs/env_0/RightArm/ur5e/Gripper/robotiq_2f_140",
+        ]
+
+        # Collect all collision pairs from both arms first
+        all_pair_targets = []
+
+        for arm_path in arm_prim_paths:
+            arm_prim = stage.GetPrimAtPath(arm_path)
+            if not arm_prim.IsValid():
+                print(f"[Collision Filter] Warning: Could not find arm at {arm_path}")
+                continue
+
+            # Collect all collision prims for gripper links
+            collision_prims = []
+            for link_name in GRIPPER_COLLISION_LINKS:
+                link_path = f"{arm_path}/{link_name}"
+                link_prim = stage.GetPrimAtPath(link_path)
+                if not link_prim.IsValid():
+                    continue
+
+                # Find collision geometry under this link
+                # Collision prims can be direct children or under a "collisions" scope
+                for child in link_prim.GetAllChildren():
+                    if child.HasAPI(UsdPhysics.CollisionAPI):
+                        collision_prims.append(child.GetPath())
+                    # Also check grandchildren (e.g., link/collisions/mesh)
+                    for grandchild in child.GetAllChildren():
+                        if grandchild.HasAPI(UsdPhysics.CollisionAPI):
+                            collision_prims.append(grandchild.GetPath())
+
+                # The link itself might have collision API
+                if link_prim.HasAPI(UsdPhysics.CollisionAPI):
+                    collision_prims.append(link_prim.GetPath())
+
+            if len(collision_prims) < 2:
+                print(f"[Collision Filter] Warning: Found only {len(collision_prims)} collision prims for {arm_path}")
+                continue
+
+            # Build list of all pairs (consecutive entries form a pair)
+            # Each pair [A, B] means A and B don't collide
+            arm_pairs = 0
+            for i, prim1 in enumerate(collision_prims):
+                for prim2 in collision_prims[i + 1:]:
+                    all_pair_targets.append(prim1)
+                    all_pair_targets.append(prim2)
+                    arm_pairs += 1
+
+            print(f"[Collision Filter] Found {arm_pairs} collision pairs for gripper at {arm_path}")
+
+        if not all_pair_targets:
+            print("[Collision Filter] Warning: No collision pairs to filter")
+            return
+
+        # Get the physics scene to apply filtered pairs
+        physics_scene_path = "/physicsScene"
+        physics_scene_prim = stage.GetPrimAtPath(physics_scene_path)
+
+        if not physics_scene_prim.IsValid():
+            # Try alternate path
+            physics_scene_path = "/World/physicsScene"
+            physics_scene_prim = stage.GetPrimAtPath(physics_scene_path)
+
+        if not physics_scene_prim.IsValid():
+            print("[Collision Filter] Warning: Could not find physics scene")
+            return
+
+        # Apply FilteredPairsAPI if not already present
+        filtered_pairs_api = UsdPhysics.FilteredPairsAPI.Get(stage, physics_scene_prim.GetPath())
+        if not filtered_pairs_api:
+            filtered_pairs_api = UsdPhysics.FilteredPairsAPI.Apply(physics_scene_prim)
+
+        # Get the relationship for filtered pairs
+        filtered_rel = filtered_pairs_api.GetFilteredPairsRel()
+
+        # Set all targets at once (includes pairs from both arms)
+        filtered_rel.SetTargets(all_pair_targets)
+
+        total_pairs = len(all_pair_targets) // 2
+        print(f"[Collision Filter] Total: Disabled {total_pairs} collision pairs for both grippers")
 
     def _create_controller_visualizations(self):
         """Create visualization markers for controller coordinate frames."""

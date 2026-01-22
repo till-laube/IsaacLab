@@ -207,39 +207,34 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
                 stiffness=150.0,
                 damping=18.0,
             ),
-            # Gripper actuators (updated for new URDF with mimic joints)
+            # Gripper actuators - match URDF effort/velocity limits
             "gripper_drive": ImplicitActuatorCfg(
                 joint_names_expr=["finger_joint"],
-                effort_limit_sim=1650.0,
-                velocity_limit_sim=2.268928,
-                stiffness=500.0,
-                damping=0.2,
+                effort_limit_sim=1000.0,  # Match URDF effort limit
+                velocity_limit_sim=2.0,   # Match URDF velocity limit
+                stiffness=17.0,  # Low stiffness to minimize drift
+                damping=0.02,    # Damping for stability
             ),
             "gripper_mimics": ImplicitActuatorCfg(
-                joint_names_expr=[
-                    ".*_outer_knuckle_joint", 
-                    #".*_outer_finger_joint", 
-                    #".*_inner_finger_pad_joint",
-                ],
-                effort_limit_sim=1.0,
-                velocity_limit_sim=10.0,
-                stiffness=0.0,  # Very high stiffness for parallel grip on flat objects
-                damping=0.0,  # High damping to prevent oscillation
+                joint_names_expr=["right_outer_knuckle_joint"],
+                effort_limit_sim=1000.0,  # Match URDF effort limit
+                velocity_limit_sim=2.0,   # Match URDF velocity limit
+                stiffness=17.0,  # Match finger_joint
+                damping=0.02,    # Match finger_joint
             ),
+            # Inner finger joints - passive mimic joints
             "gripper_finger": ImplicitActuatorCfg(
-                joint_names_expr=[
-                    ".*_inner_finger_joint",
-                ],
-                effort_limit_sim=50.0,
-                velocity_limit_sim=10.0,
-                stiffness=0.0,
-                damping=1.0,
+                joint_names_expr=[".*_inner_finger_joint"],
+                effort_limit_sim=1000.0,  # Match URDF effort limit
+                velocity_limit_sim=2.0,   # Match URDF velocity limit
+                stiffness=0.0,  # Passive joints
+                damping=0.0,
             ),
-            # Inner knuckle joints - passive joints in gripper mechanism
+            # Inner knuckle joints - passive mimic joints
             "gripper_knuckle": ImplicitActuatorCfg(
                 joint_names_expr=[".*_inner_knuckle_joint"],
-                effort_limit_sim=100.0,
-                velocity_limit_sim=10.0,
+                effort_limit_sim=1000.0,  # Match URDF effort limit
+                velocity_limit_sim=2.0,   # Match URDF velocity limit
                 stiffness=0.0,  # Passive joints
                 damping=0.0,
             ),
@@ -300,30 +295,34 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
                 stiffness=150.0,
                 damping=18.0,
             ),
-            # Gripper actuators (updated for new URDF with mimic joints)
+            # Gripper actuators - match URDF effort/velocity limits
             "gripper_drive": ImplicitActuatorCfg(
                 joint_names_expr=["finger_joint"],
-                effort_limit_sim=1650.0,
-                velocity_limit_sim=10.0,
-                stiffness=17.0,
-                damping=0.02,
+                effort_limit_sim=1000.0,  # Match URDF effort limit
+                velocity_limit_sim=2.0,   # Match URDF velocity limit
+                stiffness=17.0,  # Low stiffness to minimize drift
+                damping=0.02,    # Damping for stability
             ),
-            # Inner finger and knuckle joints - follow main finger joint
-            "gripper_followers": ImplicitActuatorCfg(
-                joint_names_expr=[
-                    ".*_inner_finger_joint",
-                    ".*_outer_knuckle_joint",
-                ],
-                effort_limit_sim=200.0,
-                velocity_limit_sim=10.0,
-                stiffness=17.0,
-                damping=0.02,
+            "gripper_mimics": ImplicitActuatorCfg(
+                joint_names_expr=["right_outer_knuckle_joint"],
+                effort_limit_sim=1000.0,  # Match URDF effort limit
+                velocity_limit_sim=2.0,   # Match URDF velocity limit
+                stiffness=17.0,  # Match finger_joint
+                damping=0.02,    # Match finger_joint
             ),
-            # Inner knuckle joints - follow main finger joint
+            # Inner finger joints - passive mimic joints
+            "gripper_finger": ImplicitActuatorCfg(
+                joint_names_expr=[".*_inner_finger_joint"],
+                effort_limit_sim=1000.0,  # Match URDF effort limit
+                velocity_limit_sim=2.0,   # Match URDF velocity limit
+                stiffness=0.0,  # Passive joints
+                damping=0.0,
+            ),
+            # Inner knuckle joints - passive mimic joints
             "gripper_knuckle": ImplicitActuatorCfg(
                 joint_names_expr=[".*_inner_knuckle_joint"],
-                effort_limit_sim=100.0,
-                velocity_limit_sim=10.0,
+                effort_limit_sim=1000.0,  # Match URDF effort limit
+                velocity_limit_sim=2.0,   # Match URDF velocity limit
                 stiffness=0.0,  # Passive joints
                 damping=0.0,
             ),
@@ -487,10 +486,10 @@ class ActionsCfg:
         close_command_expr={
             "finger_joint": 0.7,
             "left_inner_knuckle_joint": 0.7,
-            "right_inner_knuckle_joint": 0.7,
+            "right_inner_knuckle_joint": -0.7,
             "right_outer_knuckle_joint": -0.7,
             "left_inner_finger_joint": -0.7,
-            "right_inner_finger_joint": -0.7,
+            "right_inner_finger_joint": 0.7,
         },
     )
 
