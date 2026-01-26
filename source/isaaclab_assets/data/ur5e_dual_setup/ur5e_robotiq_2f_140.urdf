@@ -405,12 +405,12 @@
         <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_outer_knuckle_visuals_robotiq_arg2f_140_outer_knuckle_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
     </visual>
-    <!--<collision>
+    <collision>
       <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
       <geometry>
         <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_outer_knuckle_collisions_robotiq_arg2f_140_outer_knuckle_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
-    </collision>-->
+    </collision>
   </link>
   <link name="left_outer_finger">
     <inertial>
@@ -424,12 +424,12 @@
         <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_outer_finger_visuals_robotiq_arg2f_140_outer_finger_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
     </visual>
-    <!--<collision>
+    <collision>
       <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
       <geometry>
         <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_outer_finger_collisions_robotiq_arg2f_140_outer_finger_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
-    </collision>-->
+    </collision>
   </link>
   <link name="left_inner_finger">
     <inertial>
@@ -443,12 +443,12 @@
         <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_inner_finger_visuals_robotiq_arg2f_140_inner_finger_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
     </visual>
-    <!--<collision>
+    <collision>
       <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
       <geometry>
         <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_inner_finger_collisions_robotiq_arg2f_140_inner_finger_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
-    </collision>-->
+    </collision>
   </link>
   <link name="left_inner_finger_pad">
     <visual>
@@ -482,12 +482,12 @@
         <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_inner_knuckle_visuals_robotiq_arg2f_140_inner_knuckle_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
     </visual>
-    <!--<collision>
+    <collision>
       <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
       <geometry>
         <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/left_inner_knuckle_collisions_robotiq_arg2f_140_inner_knuckle_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
-    </collision>-->
+    </collision>
   </link>
   <link name="right_outer_knuckle">
     <inertial>
@@ -501,12 +501,12 @@
         <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_outer_knuckle_visuals_robotiq_arg2f_140_outer_knuckle_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
     </visual>
-    <!--<collision>
+    <collision>
       <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
       <geometry>
         <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_outer_knuckle_collisions_robotiq_arg2f_140_outer_knuckle_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
-    </collision>-->
+    </collision>
   </link>
   <link name="right_outer_finger">
     <inertial>
@@ -520,12 +520,12 @@
         <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_outer_finger_visuals_robotiq_arg2f_140_outer_finger_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
     </visual>
-    <!--<collision>
+    <collision>
       <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
       <geometry>
         <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_outer_finger_collisions_robotiq_arg2f_140_outer_finger_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
-    </collision>-->
+    </collision>
   </link>
   <link name="right_inner_finger">
     <inertial>
@@ -539,12 +539,12 @@
         <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_inner_finger_visuals_robotiq_arg2f_140_inner_finger_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
     </visual>
-    <!--<collision>
+    <collision>
       <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
       <geometry>
         <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_inner_finger_collisions_robotiq_arg2f_140_inner_finger_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
-    </collision>-->
+    </collision>
   </link>
   <link name="right_inner_finger_pad">
     <visual>
@@ -578,12 +578,12 @@
         <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_inner_knuckle_visuals_robotiq_arg2f_140_inner_knuckle_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
     </visual>
-    <!--<collision>
+    <collision>
       <origin xyz="0. 0. 0." rpy="0. 0. 0."/>
       <geometry>
         <mesh filename="file:///home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/meshes/right_inner_knuckle_collisions_robotiq_arg2f_140_inner_knuckle_node_STL_BINARY__mesh.obj" scale="1. 1. 1."/>
       </geometry>
-    </collision>-->
+    </collision>
   </link>
 
   <!-- TCP Link -->
