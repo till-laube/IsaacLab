@@ -65,8 +65,8 @@ parser.add_argument(
 parser.add_argument(
     "--right-ip",
     type=str,
-    default="100.80.147.78",
-    help="IP address of the right UR5e arm (default: 100.80.147.78).",
+    default="100.80.147.51",
+    help="IP address of the right UR5e arm (default: 100.80.147.51).",
 )
 parser.add_argument(
     "--zmq-port",
@@ -232,6 +232,48 @@ class RealRobotPublisher:
         logger.info("[ZMQ] Publisher closed")
 
 
+def read_gripper_position(ip: str, port: int = 63352, timeout: float = 2.0) -> float:
+    """Read current gripper position via Robotiq ASCII socket interface.
+
+    Args:
+        ip: IP address of the robot (gripper is connected via robot).
+        port: Gripper socket port (default 63352 for Robotiq on UR).
+        timeout: Socket timeout in seconds.
+
+    Returns:
+        Gripper position as float (0.0 = open, 1.0 = closed), or 0.0 on failure.
+    """
+    import socket
+
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        sock.connect((ip, port))
+
+        # Send GET POS command
+        sock.sendall(b"GET POS\n")
+
+        # Read response
+        response = sock.recv(1024).decode().strip()
+        sock.close()
+
+        # Parse response - expected format: "POS 128" or just "128"
+        if "POS" in response:
+            pos_str = response.split()[-1]
+        else:
+            pos_str = response
+
+        pos_val = int(pos_str)
+        # Convert 0-255 range to 0.0-1.0
+        gripper_pos = pos_val / 255.0
+        print(f"[GRIPPER] Read position from {ip}: {pos_val} -> {gripper_pos:.3f}")
+        return gripper_pos
+
+    except Exception as e:
+        print(f"[GRIPPER] Failed to read from {ip}:{port}: {e}")
+        return 0.0
+
+
 def read_real_robot_positions(left_ip: str, right_ip: str) -> tuple:
     """Read current joint positions from real UR5e robots.
 
@@ -277,11 +319,13 @@ def read_real_robot_positions(left_ip: str, right_ip: str) -> tuple:
         import traceback
         traceback.print_exc()
 
-    # TODO: Read gripper positions via socket if needed
-    left_gripper = 0.0
-    right_gripper = 0.0
+    # Read gripper positions via Robotiq ASCII socket interface
+    print("[GRIPPER] Reading gripper positions...")
+    left_gripper = read_gripper_position(left_ip)
+    right_gripper = read_gripper_position(right_ip)
 
     print(f"[RTDE] Returning: left={left_joints is not None}, right={right_joints is not None}")
+    print(f"[GRIPPER] Returning: left_gripper={left_gripper:.3f}, right_gripper={right_gripper:.3f}")
     return left_joints, right_joints, left_gripper, right_gripper
 
 
@@ -318,7 +362,8 @@ def get_joint_positions_from_env(env) -> tuple:
     return left_arm_joints, right_arm_joints, left_gripper, right_gripper
 
 
-def set_robot_joint_positions(env, left_joints: list = None, right_joints: list = None):
+def set_robot_joint_positions(env, left_joints: list = None, right_joints: list = None,
+                               left_gripper: float = None, right_gripper: float = None):
     """Explicitly set robot joint positions in simulation.
 
     This forces the simulation robot to match the specified joint positions.
@@ -327,8 +372,11 @@ def set_robot_joint_positions(env, left_joints: list = None, right_joints: list 
         env: The Isaac Lab environment.
         left_joints: Left arm joint positions (6 elements), or None to skip.
         right_joints: Right arm joint positions (6 elements), or None to skip.
+        left_gripper: Left gripper position (0.0-1.0), or None to skip.
+        right_gripper: Right gripper position (0.0-1.0), or None to skip.
     """
     print(f"[SYNC] set_robot_joint_positions called with left={left_joints is not None}, right={right_joints is not None}")
+    print(f"[SYNC] Grippers: left={left_gripper}, right={right_gripper}")
 
     left_arm = env.scene["left_arm"]
     right_arm = env.scene["right_arm"]
@@ -344,6 +392,12 @@ def set_robot_joint_positions(env, left_joints: list = None, right_joints: list 
         # Update first 6 joints (arm joints)
         for i in range(min(6, len(left_joints))):
             joint_pos[0, i] = left_joints[i]
+        # Set gripper position if provided (joint index 6 = finger_joint)
+        # Gripper: 0.0 = open, 1.0 = closed -> maps to 0.0 to 0.7 rad
+        if left_gripper is not None:
+            gripper_rad = left_gripper * 0.7  # Convert 0-1 to 0-0.7 rad
+            joint_pos[0, 6] = gripper_rad
+            print(f"[SYNC] LEFT gripper set to {left_gripper:.3f} -> {gripper_rad:.4f} rad")
         # Write to simulation
         left_arm.write_joint_state_to_sim(joint_pos, joint_vel)
         print(f"[SYNC] LEFT arm joint_pos written to sim")
@@ -356,6 +410,11 @@ def set_robot_joint_positions(env, left_joints: list = None, right_joints: list 
         joint_vel[:] = 0.0
         for i in range(min(6, len(right_joints))):
             joint_pos[0, i] = right_joints[i]
+        # Set gripper position if provided
+        if right_gripper is not None:
+            gripper_rad = right_gripper * 0.7
+            joint_pos[0, 6] = gripper_rad
+            print(f"[SYNC] RIGHT gripper set to {right_gripper:.3f} -> {gripper_rad:.4f} rad")
         right_arm.write_joint_state_to_sim(joint_pos, joint_vel)
         print(f"[SYNC] RIGHT arm joint_pos written to sim")
 
@@ -592,10 +651,13 @@ def main() -> None:
 
     # After reset, explicitly sync simulation robot to real robot positions
     # This ensures sim matches real robot BEFORE any teleoperation starts
+    print(real_robot_initial_pos)
     if real_robot_initial_pos is not None:
         print("[SYNC] Syncing simulation robot to real robot positions...")
         print(f"[SYNC] Left joints to set: {real_robot_initial_pos.get('left')}")
         print(f"[SYNC] Right joints to set: {real_robot_initial_pos.get('right')}")
+        print(f"[SYNC] Left gripper to set: {real_robot_initial_pos.get('left_gripper')}")
+        print(f"[SYNC] Right gripper to set: {real_robot_initial_pos.get('right_gripper')}")
 
         real_left_arm_joints = np.round(real_robot_initial_pos.get("left"), decimals=4)
         real_right_arm_joints = np.round(real_robot_initial_pos.get("right"), decimals=4)
@@ -611,6 +673,8 @@ def main() -> None:
                 env,
                 left_joints=real_left_arm_joints,
                 right_joints=real_right_arm_joints,
+                left_gripper=real_left_gripper,
+                right_gripper=real_right_gripper,
             )
             # Step simulation to apply the changes
             env.sim.step()
@@ -621,6 +685,8 @@ def main() -> None:
         right_arm = env.scene["right_arm"]
         print(f"[SYNC] Verification - LEFT arm actual: {left_arm.data.joint_pos[0, :6].cpu().numpy()}")
         print(f"[SYNC] Verification - RIGHT arm actual: {right_arm.data.joint_pos[0, :6].cpu().numpy()}")
+        print(f"[SYNC] Verification - LEFT gripper actual: {left_arm.data.joint_pos[0, 6].cpu().item():.4f} rad")
+        print(f"[SYNC] Verification - RIGHT gripper actual: {right_arm.data.joint_pos[0, 6].cpu().item():.4f} rad")
         print("[SYNC] Simulation robot now matches real robot position")
 
     print("Teleoperation started. Press 'R' to reset the environment.")

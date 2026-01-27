@@ -78,7 +78,7 @@ UR5E_RMPFLOW_CFG = RmpFlowControllerCfg(
     urdf_file=_CUSTOM_URDF_PATH,  # Using custom URDF with Robotiq gripper and tcp_link
     collision_file=os.path.join(_CUSTOM_RMPFLOW_DIR, "ur5e_robotiq140_robot_description.yaml"),
     frame_name="tcp_link",  # Matches the USD tcp_link frame
-    evaluations_per_frame=5,
+    evaluations_per_frame=1,
     ignore_robot_state_updates=True,  # CRITICAL: Same as Galbot for proper relative mode
 )
 """Configuration of RMPFlow for UR5e arm with Robotiq 2F-140 gripper (custom configs with gripper collision)."""
@@ -176,11 +176,11 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
             joint_pos={
                 # Arm joints - neutral ready position
                 "shoulder_pan_joint": -1.57079,
-                "shoulder_lift_joint": -1.57079,
-                "elbow_joint": -1.57079,
-                "wrist_1_joint": 3.14159,
-                "wrist_2_joint": -1.57079,
-                "wrist_3_joint": -0.78539,
+                "shoulder_lift_joint": -1.83259,
+                "elbow_joint": -2.44346,
+                "wrist_1_joint": -2.00712,
+                "wrist_2_joint": 4.79966,
+                "wrist_3_joint": -0.87266,
                 # Gripper joints - open position
                 "finger_joint": 0.0,
                 "left_inner_knuckle_joint": 0.0,
@@ -199,12 +199,12 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
             ),
             "elbow": ImplicitActuatorCfg(
                 joint_names_expr=["elbow_joint"],
-                stiffness=400.0,
+                stiffness=400,
                 damping=22.0,
             ),
             "wrist": ImplicitActuatorCfg(
                 joint_names_expr=["wrist_.*"],
-                stiffness=150.0,
+                stiffness=200.0,
                 damping=18.0,
             ),
             # Gripper actuators - match URDF effort/velocity limits
@@ -675,7 +675,7 @@ class Ur5eDualManipulationEnvCfg(ManagerBasedRLEnvCfg):
     def __post_init__(self) -> None:
         """Post initialization - set simulation parameters."""
         # General settings
-        self.decimation = 3  # Control decimation (20Hz control within 60Hz sim)
+        self.decimation = 2  # Control decimation (20Hz control within 60Hz sim)
         self.episode_length_s = 30.0  # TODO: Adjust this for our data collection?
 
         # Viewer settings
@@ -683,7 +683,7 @@ class Ur5eDualManipulationEnvCfg(ManagerBasedRLEnvCfg):
         self.viewer.lookat = (0.0, 0.0, 1.3)  # Look at the arms
 
         # Simulation settings
-        self.sim.dt = 1 / 60  # 60Hz simulation
+        self.sim.dt = 1 / 240  # 60Hz simulation
         self.sim.render_interval = 6
 
         # XR/VR settings for headset view
@@ -701,8 +701,8 @@ class Ur5eDualManipulationEnvCfg(ManagerBasedRLEnvCfg):
                 "vive": OpenXRDeviceCfg(
                     retargeters=[
                         ViveControllerDualArmRetargeterCfg(
-                            pos_sensitivity=5.0,  # Position movement sensitivity (matches single arm)
-                            rot_sensitivity=5.0,  # Rotation sensitivity
+                            pos_sensitivity=15.0,  # Position movement sensitivity (matches single arm)
+                            rot_sensitivity=30.0,  # Rotation sensitivity
                             trigger_threshold=0.5,  # Trigger threshold for gripper close
                             # Arm base rotations for coordinate transformation (world frame to arm base frame)
                             # Left: (180°, -45°, 90°) in XYZ Euler

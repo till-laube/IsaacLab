@@ -25,7 +25,7 @@
     <parent link="upper_arm_link"/>
     <child link="forearm_link"/>
     <axis xyz="0. 0. 1."/>
-    <limit lower="-3.1415927" upper="3.1415927" effort="150." velocity="3.1415927"/>
+    <limit lower="-6.2831853" upper="6.2831853" effort="150." velocity="3.1415927"/>
   </joint>
   <joint name="wrist_1_joint" type="revolute">
     <origin xyz="-0.3922 0. 0.1333" rpy="0. 0. 0."/>
