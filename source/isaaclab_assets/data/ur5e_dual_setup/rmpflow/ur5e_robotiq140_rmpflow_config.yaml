@@ -20,7 +20,7 @@ joint_limit_buffers: [.05, .05, .05, .05, .05, .05]
 rmp_params:
     cspace_target_rmp:
         metric_scalar: 1.
-        position_gain: 0.0 #TODO: change back to 5.?
+        position_gain: 5.0 #TODO: change back to 5.?
         damping_gain: 250.
         robust_position_term_thresh: .5
         inertia: 1.

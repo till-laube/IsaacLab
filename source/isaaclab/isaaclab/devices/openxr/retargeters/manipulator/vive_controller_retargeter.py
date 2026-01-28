@@ -166,6 +166,10 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
         self._rot_sensitivity = cfg.rot_sensitivity
         self._trigger_threshold = cfg.trigger_threshold
 
+        # EMA filter smoothing factors: 1.0 = no filtering, lower = more smoothing (more latency)
+        self._pos_smoothing = cfg.pos_smoothing
+        self._rot_smoothing = cfg.rot_smoothing
+
         # Store base rotations for coordinate transformation
         # Convert from [w,x,y,z] to scipy format [x,y,z,w] and create rotation objects
         left_quat_scipy = [cfg.left_base_quat[1], cfg.left_base_quat[2], cfg.left_base_quat[3], cfg.left_base_quat[0]]
@@ -192,6 +196,12 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
         self._prev_right_position = None
         self._prev_right_quaternion = None
 
+        # EMA filter state for jitter smoothing (stores previous filtered deltas)
+        self._filtered_left_pos_delta = np.zeros(3)
+        self._filtered_left_rot_delta = np.zeros(3)
+        self._filtered_right_pos_delta = np.zeros(3)
+        self._filtered_right_rot_delta = np.zeros(3)
+
     def get_requirements(self) -> list[RetargeterBase.Requirement]:
         """Return required data features for this retargeter."""
         return [RetargeterBase.Requirement.MOTION_CONTROLLER]
@@ -199,7 +209,7 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
     def reset(self):
         """Reset the retargeter state.
 
-        This clears the previous pose tracking, which is important when:
+        This clears the previous pose tracking and filter state, which is important when:
         - XR mode is activated/deactivated
         - The coordinate system changes
         - The user resets the environment
@@ -208,54 +218,57 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
         self._prev_left_quaternion = None
         self._prev_right_position = None
         self._prev_right_quaternion = None
-        # print("[DualArmRetargeter] Reset - cleared previous pose tracking")
+        # Reset EMA filter state
+        self._filtered_left_pos_delta = np.zeros(3)
+        self._filtered_left_rot_delta = np.zeros(3)
+        self._filtered_right_pos_delta = np.zeros(3)
+        self._filtered_right_rot_delta = np.zeros(3)
 
     def _process_controller(
-        self, controller_data: np.ndarray, prev_position, prev_quaternion, is_left: bool,
-        world_to_base: Rotation, controller_offset: Rotation
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        self, controller_data: np.ndarray, prev_position, prev_quaternion,
+        filtered_pos_delta: np.ndarray, filtered_rot_delta: np.ndarray,
+        is_left: bool, world_to_base: Rotation, controller_offset: Rotation
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Process single controller data to Se3 DELTA format (7 elements).
 
         Args:
             controller_data: Raw controller data from OpenXR
             prev_position: Previous position for delta computation (or None for first frame)
             prev_quaternion: Previous quaternion for delta computation (or None for first frame)
+            filtered_pos_delta: Previous EMA-filtered position delta
+            filtered_rot_delta: Previous EMA-filtered rotation delta
             is_left: Whether this is the left controller (for debug output)
             world_to_base: Rotation object to transform deltas from world to arm base frame
             controller_offset: Rotation offset to align controller frame with gripper frame (applied in arm base frame)
 
         Returns:
-            Tuple of (output_array, new_position, new_quaternion)
+            Tuple of (output_array, new_position, new_quaternion, new_filtered_pos_delta, new_filtered_rot_delta)
         """
         default_output = np.zeros(7)
         default_output[6] = -1.0  # Gripper open
 
         if len(controller_data) == 0 or len(controller_data) <= DeviceBase.MotionControllerDataRowIndex.POSE.value:
-            return default_output, prev_position, prev_quaternion
+            return default_output, prev_position, prev_quaternion, filtered_pos_delta, filtered_rot_delta
 
         pose = controller_data[DeviceBase.MotionControllerDataRowIndex.POSE.value]
         if len(pose) < 7:
-            return default_output, prev_position, prev_quaternion
+            return default_output, prev_position, prev_quaternion, filtered_pos_delta, filtered_rot_delta
 
         # Extract current position and quaternion
         current_position = pose[:3]
         current_quaternion = pose[3:7]  # [qw, qx, qy, qz]
-
-        # Debug: Print actual controller position
-        # side = "LEFT" if is_left else "RIGHT"
-        # print(f"[DualArmRetargeter {side}] Current position: {current_position}, quat: {current_quaternion}")
-        # if prev_position is not None:
-        #     print(f"[DualArmRetargeter {side}] Previous position: {prev_position}")
 
         # Compute deltas for relative mode
         if prev_position is None:
             # First frame: initialize with current pose, output zero delta
             position_delta = np.zeros(3)
             rotation_delta = np.zeros(3)
+            new_filtered_pos = filtered_pos_delta
+            new_filtered_rot = filtered_rot_delta
         else:
             # Compute position delta in world frame
             position_delta_raw = current_position - prev_position
-            position_delta = position_delta_raw * self._pos_sensitivity
+            position_delta_scaled = position_delta_raw * self._pos_sensitivity
 
             # Compute rotation delta in world frame
             # Convert quaternions to rotations (scipy format: [x, y, z, w])
@@ -275,14 +288,21 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
             rot_delta_base = world_to_base * rot_delta_world * world_to_base.inv()
 
             # Step 3: Apply controller offset in arm base frame
-            # This aligns controller coordinate axes with gripper coordinate axes
             rot_delta_final = rot_delta_base * controller_offset
 
             # Convert to rotation vector (axis-angle) and apply sensitivity
-            rotation_delta = rot_delta_final.as_rotvec() * self._rot_sensitivity
+            rotation_delta_scaled = rot_delta_final.as_rotvec() * self._rot_sensitivity
 
             # Transform position delta from world frame to arm base frame
-            position_delta = world_to_base.apply(position_delta)
+            position_delta_scaled = world_to_base.apply(position_delta_scaled)
+
+            # Apply EMA filter for jitter reduction
+            # filtered = alpha * raw + (1 - alpha) * prev_filtered
+            new_filtered_pos = self._pos_smoothing * position_delta_scaled + (1.0 - self._pos_smoothing) * filtered_pos_delta
+            new_filtered_rot = self._rot_smoothing * rotation_delta_scaled + (1.0 - self._rot_smoothing) * filtered_rot_delta
+
+            position_delta = new_filtered_pos
+            rotation_delta = new_filtered_rot
 
         position = position_delta
         rotation_vector = rotation_delta
@@ -296,7 +316,7 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
                 gripper = 1.0 if trigger_value > self._trigger_threshold else -1.0
 
         output = np.concatenate([position, rotation_vector, [gripper]])
-        return output, current_position.copy(), current_quaternion.copy()
+        return output, current_position.copy(), current_quaternion.copy(), new_filtered_pos, new_filtered_rot
 
     def retarget(self, device_output: dict) -> torch.Tensor:
         """Retarget both controllers to dual-arm Se3 DELTA commands.
@@ -312,22 +332,28 @@ class ViveControllerDualArmRetargeter(RetargeterBase):
         right_data = device_output.get(DeviceBase.TrackingTarget.CONTROLLER_RIGHT, np.array([]))
 
         # Process left controller and update tracking
-        # Pass left arm's world_to_base transformation and controller offset
-        left_output, new_left_pos, new_left_quat = self._process_controller(
-            left_data, self._prev_left_position, self._prev_left_quaternion, is_left=True,
-            world_to_base=self._left_world_to_base, controller_offset=self._left_controller_offset_rot
+        left_output, new_left_pos, new_left_quat, new_left_filt_pos, new_left_filt_rot = self._process_controller(
+            left_data, self._prev_left_position, self._prev_left_quaternion,
+            self._filtered_left_pos_delta, self._filtered_left_rot_delta,
+            is_left=True, world_to_base=self._left_world_to_base,
+            controller_offset=self._left_controller_offset_rot
         )
         self._prev_left_position = new_left_pos
         self._prev_left_quaternion = new_left_quat
+        self._filtered_left_pos_delta = new_left_filt_pos
+        self._filtered_left_rot_delta = new_left_filt_rot
 
         # Process right controller and update tracking
-        # Pass right arm's world_to_base transformation and controller offset
-        right_output, new_right_pos, new_right_quat = self._process_controller(
-            right_data, self._prev_right_position, self._prev_right_quaternion, is_left=False,
-            world_to_base=self._right_world_to_base, controller_offset=self._right_controller_offset_rot
+        right_output, new_right_pos, new_right_quat, new_right_filt_pos, new_right_filt_rot = self._process_controller(
+            right_data, self._prev_right_position, self._prev_right_quaternion,
+            self._filtered_right_pos_delta, self._filtered_right_rot_delta,
+            is_left=False, world_to_base=self._right_world_to_base,
+            controller_offset=self._right_controller_offset_rot
         )
         self._prev_right_position = new_right_pos
         self._prev_right_quaternion = new_right_quat
+        self._filtered_right_pos_delta = new_right_filt_pos
+        self._filtered_right_rot_delta = new_right_filt_rot
 
         output = np.concatenate([left_output, right_output])
         return torch.tensor(output, dtype=torch.float32)
@@ -350,6 +376,13 @@ class ViveControllerDualArmRetargeterCfg(RetargeterCfg):
         pos_sensitivity: Multiplier for position deltas (higher = more sensitive)
         rot_sensitivity: Multiplier for rotation deltas (higher = more sensitive)
         trigger_threshold: Trigger value (0.0-1.0) to consider gripper closed
+
+        pos_smoothing: EMA filter smoothing factor for position (0.0-1.0).
+                       1.0 = no filtering (raw input), lower = more smoothing.
+                       Recommended: 0.3-0.5 for jitter reduction with acceptable latency.
+        rot_smoothing: EMA filter smoothing factor for rotation (0.0-1.0).
+                       1.0 = no filtering (raw input), lower = more smoothing.
+                       Recommended: 0.3-0.5 for jitter reduction with acceptable latency.
 
         left_base_quat: Quaternion [w,x,y,z] representing the left arm base orientation in world frame.
                         Used to transform movement deltas from world coordinates to arm base coordinates.
@@ -375,6 +408,8 @@ class ViveControllerDualArmRetargeterCfg(RetargeterCfg):
     pos_sensitivity: float = 1.0
     rot_sensitivity: float = 1.0
     trigger_threshold: float = 0.5
+    pos_smoothing: float = 0.4  # EMA alpha for position: 0.4 gives good jitter reduction
+    rot_smoothing: float = 0.4  # EMA alpha for rotation: 0.4 gives good jitter reduction
     left_base_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)  # Identity by default
     right_base_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)  # Identity by default
     left_controller_offset_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)  # Identity by default
