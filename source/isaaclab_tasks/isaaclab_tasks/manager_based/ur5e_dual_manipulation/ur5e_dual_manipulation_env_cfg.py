@@ -79,7 +79,7 @@ UR5E_RMPFLOW_CFG = RmpFlowControllerCfg(
     collision_file=os.path.join(_CUSTOM_RMPFLOW_DIR, "ur5e_robotiq140_robot_description.yaml"),
     frame_name="tcp_link",  # Matches the USD tcp_link frame
     evaluations_per_frame=1,
-    ignore_robot_state_updates=True,  # CRITICAL: Same as Galbot for proper relative mode
+    ignore_robot_state_updates=False,  
 )
 """Configuration of RMPFlow for UR5e arm with Robotiq 2F-140 gripper (custom configs with gripper collision)."""
 
@@ -701,8 +701,8 @@ class Ur5eDualManipulationEnvCfg(ManagerBasedRLEnvCfg):
                 "vive": OpenXRDeviceCfg(
                     retargeters=[
                         ViveControllerDualArmRetargeterCfg(
-                            pos_sensitivity=15.0,  # Position movement sensitivity (matches single arm)
-                            rot_sensitivity=30.0,  # Rotation sensitivity
+                            pos_sensitivity=20.0,  # Position movement sensitivity (matches single arm)
+                            rot_sensitivity=20.0,  # Rotation sensitivity
                             trigger_threshold=0.5,  # Trigger threshold for gripper close
                             # Arm base rotations for coordinate transformation (world frame to arm base frame)
                             # Left: (180°, -45°, 90°) in XYZ Euler

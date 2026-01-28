@@ -151,6 +151,94 @@ if args_cli.real_robot:
         sys.exit(1)
 
 
+class RealRobotFeedback:
+    """Maintains RTDE connections for continuous real robot state feedback."""
+
+    def __init__(self, left_ip: str, right_ip: str):
+        """Initialize RTDE connections for continuous feedback.
+
+        Args:
+            left_ip: IP address of left arm.
+            right_ip: IP address of right arm.
+        """
+        self.left_ip = left_ip
+        self.right_ip = right_ip
+        self.left_rtde = None
+        self.right_rtde = None
+        self.connected = False
+
+    def connect(self) -> bool:
+        """Establish RTDE connections to both arms.
+
+        Returns:
+            True if at least one arm connected successfully.
+        """
+        if not REAL_ROBOT_AVAILABLE or RTDEReceiveInterface is None:
+            print("[FEEDBACK] ur_rtde not available")
+            return False
+
+        try:
+            print(f"[FEEDBACK] Connecting to LEFT arm at {self.left_ip}...")
+            self.left_rtde = RTDEReceiveInterface(self.left_ip)
+            print("[FEEDBACK] LEFT arm connected")
+        except Exception as e:
+            print(f"[FEEDBACK] Failed to connect LEFT arm: {e}")
+            self.left_rtde = None
+
+        try:
+            print(f"[FEEDBACK] Connecting to RIGHT arm at {self.right_ip}...")
+            self.right_rtde = RTDEReceiveInterface(self.right_ip)
+            print("[FEEDBACK] RIGHT arm connected")
+        except Exception as e:
+            print(f"[FEEDBACK] Failed to connect RIGHT arm: {e}")
+            self.right_rtde = None
+
+        self.connected = self.left_rtde is not None or self.right_rtde is not None
+        if self.connected:
+            print("[FEEDBACK] RTDE feedback connections established")
+        return self.connected
+
+    def read_positions(self) -> tuple:
+        """Read current joint positions from real robots.
+
+        Returns:
+            Tuple of (left_joints, right_joints) as lists, or None if unavailable.
+        """
+        left_joints = None
+        right_joints = None
+
+        if self.left_rtde is not None:
+            try:
+                left_joints = list(self.left_rtde.getActualQ())
+            except Exception:
+                pass  # Silent fail for performance
+
+        if self.right_rtde is not None:
+            try:
+                right_joints = list(self.right_rtde.getActualQ())
+            except Exception:
+                pass  # Silent fail for performance
+
+        return left_joints, right_joints
+
+    def close(self):
+        """Close RTDE connections."""
+        if self.left_rtde is not None:
+            try:
+                self.left_rtde.disconnect()
+            except Exception:
+                pass
+            self.left_rtde = None
+        if self.right_rtde is not None:
+            try:
+                self.right_rtde.disconnect()
+            except Exception:
+                pass
+            self.right_rtde = None
+        self.connected = False
+        print("[FEEDBACK] RTDE connections closed")
+
+
 class RealRobotPublisher:
     """Publishes joint states to real robot controller via ZMQ."""
 
@@ -329,11 +417,14 @@ def read_real_robot_positions(left_ip: str, right_ip: str) -> tuple:
     return left_joints, right_joints, left_gripper, right_gripper
 
 
-def get_joint_positions_from_env(env) -> tuple:
+def get_joint_positions_from_env(env, use_targets: bool = True) -> tuple:
     """Extract joint positions from the environment.
 
     Args:
         env: The Isaac Lab environment.
+        use_targets: If True, return RMPFlow joint targets (what controller wants).
+                     If False, return simulated joint positions (what sim achieved).
+                     Default True for real robot control to avoid lag.
 
     Returns:
         Tuple of (left_joints, right_joints, left_gripper, right_gripper).
@@ -342,10 +433,15 @@ def get_joint_positions_from_env(env) -> tuple:
     left_arm = env.scene["left_arm"]
     right_arm = env.scene["right_arm"]
 
-    # Get joint positions (first 6 are arm joints, 7th is finger_joint for gripper)
-    # Joint order: shoulder_pan, shoulder_lift, elbow, wrist_1, wrist_2, wrist_3, finger_joint, ...
-    left_pos = left_arm.data.joint_pos[0].cpu().numpy()
-    right_pos = right_arm.data.joint_pos[0].cpu().numpy()
+    if use_targets:
+        # Get RMPFlow joint TARGETS (commanded positions) - avoids simulation lag
+        # joint_pos_target is what RMPFlow wants, joint_pos is what sim achieved
+        left_pos = left_arm.data.joint_pos_target[0].cpu().numpy()
+        right_pos = right_arm.data.joint_pos_target[0].cpu().numpy()
+    else:
+        # Get simulated joint positions (includes actuator dynamics lag)
+        left_pos = left_arm.data.joint_pos[0].cpu().numpy()
+        right_pos = right_arm.data.joint_pos[0].cpu().numpy()
 
     # Extract arm joints (first 6) and gripper (7th joint - finger_joint)
     left_arm_joints = left_pos[:6].tolist()
@@ -417,6 +513,60 @@ def set_robot_joint_positions(env, left_joints: list = None, right_joints: list 
             print(f"[SYNC] RIGHT gripper set to {right_gripper:.3f} -> {gripper_rad:.4f} rad")
         right_arm.write_joint_state_to_sim(joint_pos, joint_vel)
         print(f"[SYNC] RIGHT arm joint_pos written to sim")
+
+
+def sync_sim_to_real_robot(env, feedback: "RealRobotFeedback", verbose: bool = False):
+    """Sync simulation joint positions to match real robot state.
+
+    This function reads the current real robot positions and updates the simulation
+    to match, preventing drift between sim and real. After writing joint positions,
+    it triggers an articulation update to run forward kinematics so that body poses
+    (end-effector positions) are immediately available for RMPFlow.
+
+    Args:
+        env: The Isaac Lab environment.
+        feedback: RealRobotFeedback instance with active RTDE connections.
+        verbose: If True, print debug information.
+    """
+    if feedback is None or not feedback.connected:
+        return
+
+    # Read real robot positions
+    left_joints, right_joints = feedback.read_positions()
+
+    if left_joints is None and right_joints is None:
+        return
+
+    left_arm = env.scene["left_arm"]
+    right_arm = env.scene["right_arm"]
+    dt = env.sim.cfg.dt
+
+    # Update left arm
+    if left_joints is not None:
+        joint_pos = left_arm.data.joint_pos.clone()
+        joint_vel = left_arm.data.joint_vel.clone()
+        # Keep velocity to allow smooth motion, only correct position
+        for i in range(min(6, len(left_joints))):
+            joint_pos[0, i] = left_joints[i]
+        left_arm.write_joint_state_to_sim(joint_pos, joint_vel)
+        if verbose:
+            print(f"[SYNC] LEFT: {[f'{j:.3f}' for j in left_joints[:3]]}...")
+
+    # Update right arm
+    if right_joints is not None:
+        joint_pos = right_arm.data.joint_pos.clone()
+        joint_vel = right_arm.data.joint_vel.clone()
+        for i in range(min(6, len(right_joints))):
+            joint_pos[0, i] = right_joints[i]
+        right_arm.write_joint_state_to_sim(joint_pos, joint_vel)
+        if verbose:
+            print(f"[SYNC] RIGHT: {[f'{j:.3f}' for j in right_joints[:3]]}...")
+
+    # Force forward kinematics update so body poses (EE positions) reflect synced joints
+    # This is critical: without this, _compute_frame_pose() in RMPFlow reads stale data
+    # TODO: Is this really necessary?
+    left_arm.update(dt)
+    right_arm.update(dt)
 
 
 def main() -> None:
@@ -527,6 +677,16 @@ def main() -> None:
         if not zmq_publisher.connect():
             logger.warning("[ZMQ] Publisher failed to start, continuing without real robot control")
             zmq_publisher = None
+
+    # Initialize RTDE feedback for continuous sim-to-real synchronization
+    real_robot_feedback = None
+    if args_cli.real_robot:
+        real_robot_feedback = RealRobotFeedback(args_cli.left_ip, args_cli.right_ip)
+        if not real_robot_feedback.connect():
+            logger.warning("[FEEDBACK] Failed to establish RTDE feedback, sim may drift from real robot")
+            real_robot_feedback = None
+        else:
+            print("[FEEDBACK] Continuous sim-to-real synchronization enabled")
 
     # Flags for controlling teleoperation flow
     should_reset_recording_instance = False
@@ -658,9 +818,15 @@ def main() -> None:
         print(f"[SYNC] Right joints to set: {real_robot_initial_pos.get('right')}")
         print(f"[SYNC] Left gripper to set: {real_robot_initial_pos.get('left_gripper')}")
         print(f"[SYNC] Right gripper to set: {real_robot_initial_pos.get('right_gripper')}")
+        
+        #TODO: Implement logic that triggers when only one arm is connected: aka
+        # real_robot_initial_pos.get = None
 
         real_left_arm_joints = np.round(real_robot_initial_pos.get("left"), decimals=4)
         real_right_arm_joints = np.round(real_robot_initial_pos.get("right"), decimals=4)
+
+        real_left_gripper = np.round(real_robot_initial_pos.get("left_gripper"), decimals=3)
+        real_right_gripper = np.round(real_robot_initial_pos.get("right_gripper"), decimals=3)
 
         sim_left_arm_joints = np.round(env.scene["left_arm"].data.joint_pos[0,:6].detach().cpu().tolist(), decimals=4)
         sim_right_arm_joints = np.round(env.scene["right_arm"].data.joint_pos[0,:6].detach().cpu().tolist(), decimals = 4)
@@ -668,7 +834,7 @@ def main() -> None:
         print(f"[SYNC] Left SIM joints are: {sim_left_arm_joints}")
 
         # Set positions multiple times to ensure they stick
-        while ((real_left_arm_joints != sim_left_arm_joints).all() or (real_right_arm_joints != sim_right_arm_joints)).all():
+        while ((real_left_arm_joints != sim_left_arm_joints).any() or (real_right_arm_joints != sim_right_arm_joints).any()):
             set_robot_joint_positions(
                 env,
                 left_joints=real_left_arm_joints,
@@ -694,6 +860,9 @@ def main() -> None:
         print(f"[ZMQ] Publishing joint states on port {args_cli.zmq_port}")
         print("[INFO] Start the dual_ur5e_controller_standalone.py on the robot control PC")
 
+    sync_counter = 0
+    SYNC_EVERY_N_FRAMES = 240
+
     # simulate environment
     try:
         while simulation_app.is_running():
@@ -705,6 +874,14 @@ def main() -> None:
 
                     # Only apply teleop commands when active
                     if teleoperation_active:
+                        sync_counter += 1
+                        if sync_counter >= SYNC_EVERY_N_FRAMES:
+                            # Sync simulation to real robot state BEFORE computing RMPFlow
+                            # This prevents drift between sim and real robot
+                            if real_robot_feedback is not None:
+                                sync_sim_to_real_robot(env, real_robot_feedback)
+                                sync_counter=0
+
                         # process actions
                         actions = action.repeat(env.num_envs, 1)
                         # apply actions
@@ -738,6 +915,8 @@ def main() -> None:
         # Cleanup
         if zmq_publisher is not None:
             zmq_publisher.close()
+        if real_robot_feedback is not None:
+            real_robot_feedback.close()
 
     # close the simulator
     env.close()

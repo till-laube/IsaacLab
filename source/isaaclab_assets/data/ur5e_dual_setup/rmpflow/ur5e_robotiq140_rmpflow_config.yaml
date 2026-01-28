@@ -20,12 +20,12 @@ joint_limit_buffers: [.05, .05, .05, .05, .05, .05]
 rmp_params:
     cspace_target_rmp:
         metric_scalar: 1.
-        position_gain: 5.
+        position_gain: 0.0 #TODO: change back to 5.?
         damping_gain: 250.
         robust_position_term_thresh: .5
         inertia: 1.
     cspace_trajectory_rmp:
-        p_gain: 500.
+        p_gain: 175.
         d_gain: 60.
         ff_gain: .25
         weight: 50.
@@ -47,8 +47,8 @@ rmp_params:
         damping_gain: 300.
         metric_weight: 100.
     target_rmp:
-        accel_p_gain: 1200.
-        accel_d_gain: 500.
+        accel_p_gain: 400.
+        accel_d_gain: 250.
         accel_norm_eps: .075
         metric_alpha_length_scale: .05
         min_metric_alpha: .01
@@ -58,8 +58,8 @@ rmp_params:
         proximity_metric_boost_length_scale: .02
         accept_user_weights: false
     axis_target_rmp:
-        accel_p_gain: 1800.
-        accel_d_gain: 300.
+        accel_p_gain: 600.
+        accel_d_gain: 125.
         metric_scalar: 10.
         proximity_metric_boost_scalar: 3000.
         proximity_metric_boost_length_scale: .05
@@ -76,9 +76,9 @@ rmp_params:
         metric_exploder_std_dev: .02
         metric_exploder_eps: .001
     damping_rmp:
-        accel_d_gain: 800.
+        accel_d_gain: 1000.
         metric_scalar: 5.
-        inertia: 1.
+        inertia: 0.1
 
 canonical_resolve:
     max_acceleration_norm: 300.
