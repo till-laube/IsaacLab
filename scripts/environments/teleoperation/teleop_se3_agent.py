@@ -417,14 +417,11 @@ def read_real_robot_positions(left_ip: str, right_ip: str) -> tuple:
     return left_joints, right_joints, left_gripper, right_gripper
 
 
-def get_joint_positions_from_env(env, use_targets: bool = True) -> tuple:
+def get_joint_positions_from_env(env) -> tuple:
     """Extract joint positions from the environment.
 
     Args:
         env: The Isaac Lab environment.
-        use_targets: If True, return RMPFlow joint targets (what controller wants).
-                     If False, return simulated joint positions (what sim achieved).
-                     Default True for real robot control to avoid lag.
 
     Returns:
         Tuple of (left_joints, right_joints, left_gripper, right_gripper).
@@ -433,15 +430,9 @@ def get_joint_positions_from_env(env, use_targets: bool = True) -> tuple:
     left_arm = env.scene["left_arm"]
     right_arm = env.scene["right_arm"]
 
-    if use_targets:
-        # Get RMPFlow joint TARGETS (commanded positions) - avoids simulation lag
-        # joint_pos_target is what RMPFlow wants, joint_pos is what sim achieved
-        left_pos = left_arm.data.joint_pos_target[0].cpu().numpy()
-        right_pos = right_arm.data.joint_pos_target[0].cpu().numpy()
-    else:
-        # Get simulated joint positions (includes actuator dynamics lag)
-        left_pos = left_arm.data.joint_pos[0].cpu().numpy()
-        right_pos = right_arm.data.joint_pos[0].cpu().numpy()
+    # Get simulated joint positions
+    left_pos = left_arm.data.joint_pos[0].cpu().numpy()
+    right_pos = right_arm.data.joint_pos[0].cpu().numpy()
 
     # Extract arm joints (first 6) and gripper (7th joint - finger_joint)
     left_arm_joints = left_pos[:6].tolist()
