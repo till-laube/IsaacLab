@@ -69,3 +69,7 @@ tests/
 
 # Docker history
 .isaac-lab-docker-history
+
+# Custom debug packages
+source/isaaclab_tasks/isaaclab_tasks/manager_based/ur5e_dummy_dual_manipulation/
+source/isaaclab_assets/data/ur5e_dual_setup/meshes/*
