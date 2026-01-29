@@ -342,6 +342,10 @@ class DualUR5eController:
         self.left_keep_pos: Optional[np.ndarray] = None
         self.right_keep_pos: Optional[np.ndarray] = None
 
+        # Raw ZMQ targets (unclamped) for continuous interpolation
+        self.left_raw_target: Optional[np.ndarray] = None
+        self.right_raw_target: Optional[np.ndarray] = None
+
         # Watchdogs
         self.left_watchdog = PositionWatchdog(WATCHDOG_THRESHOLD, WATCHDOG_WINDOW) if WATCHDOG_ENABLED else None
         self.right_watchdog = PositionWatchdog(WATCHDOG_THRESHOLD, WATCHDOG_WINDOW) if WATCHDOG_ENABLED else None
@@ -813,13 +817,16 @@ class DualUR5eController:
 
                 # CRITICAL: Only send servo commands when teleop is ACTIVE
                 if is_active and servo_started:
-                    # Process left arm
-                    if self.left_rtde_c and self.left_keep_pos is not None:
-                        if updated and left_target is not None:
-                            # Apply velocity limiting
-                            current_pos = np.array(self.left_rtde_r.getActualQ()) if self.left_rtde_r else self.left_keep_pos
-                            target_limited = self.clamp_velocity(current_pos, np.array(left_target))
-                            self.left_keep_pos = target_limited
+                    # Update raw targets when new ZMQ data arrives
+                    if updated:
+                        if left_target is not None:
+                            self.left_raw_target = np.array(left_target)
+                        if right_target is not None:
+                            self.right_raw_target = np.array(right_target)
+
+                    # Process left arm - interpolate toward target EVERY tick
+                    if self.left_rtde_c and self.left_keep_pos is not None and self.left_raw_target is not None:
+                        self.left_keep_pos = self.clamp_velocity(self.left_keep_pos, self.left_raw_target)
 
                         # Watchdog check
                         if self.left_watchdog and self.left_rtde_r:
@@ -837,13 +844,9 @@ class DualUR5eController:
                             SERVO_GAIN
                         )
 
-                    # Process right arm
-                    if self.right_rtde_c and self.right_keep_pos is not None:
-                        if updated and right_target is not None:
-                            # Apply velocity limiting
-                            current_pos = np.array(self.right_rtde_r.getActualQ()) if self.right_rtde_r else self.right_keep_pos
-                            target_limited = self.clamp_velocity(current_pos, np.array(right_target))
-                            self.right_keep_pos = target_limited
+                    # Process right arm - interpolate toward target EVERY tick
+                    if self.right_rtde_c and self.right_keep_pos is not None and self.right_raw_target is not None:
+                        self.right_keep_pos = self.clamp_velocity(self.right_keep_pos, self.right_raw_target)
 
                         # Watchdog check
                         if self.right_watchdog and self.right_rtde_r:
