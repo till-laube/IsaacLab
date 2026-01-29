@@ -506,7 +506,7 @@ def set_robot_joint_positions(env, left_joints: list = None, right_joints: list 
         print(f"[SYNC] RIGHT arm joint_pos written to sim")
 
 
-def sync_sim_to_real_robot(env, feedback: "RealRobotFeedback", verbose: bool = False):
+def sync_sim_to_real_robot(env, feedback: "RealRobotFeedback", alpha: float = 1.0, verbose: bool = False):
     """Sync simulation joint positions to match real robot state.
 
     This function reads the current real robot positions and updates the simulation
@@ -517,6 +517,8 @@ def sync_sim_to_real_robot(env, feedback: "RealRobotFeedback", verbose: bool = F
     Args:
         env: The Isaac Lab environment.
         feedback: RealRobotFeedback instance with active RTDE connections.
+        alpha: Blend factor for correction (0.0 = no correction, 1.0 = hard sync,
+               0.01-0.05 = soft correction). Default 1.0 for backwards compatibility.
         verbose: If True, print debug information.
     """
     if feedback is None or not feedback.connected:
@@ -536,22 +538,27 @@ def sync_sim_to_real_robot(env, feedback: "RealRobotFeedback", verbose: bool = F
     if left_joints is not None:
         joint_pos = left_arm.data.joint_pos.clone()
         joint_vel = left_arm.data.joint_vel.clone()
-        # Keep velocity to allow smooth motion, only correct position
+        # Blend sim position toward real position
         for i in range(min(6, len(left_joints))):
-            joint_pos[0, i] = left_joints[i]
+            sim_pos = float(joint_pos[0, i])
+            real_pos = left_joints[i]
+            joint_pos[0, i] = (1 - alpha) * sim_pos + alpha * real_pos
         left_arm.write_joint_state_to_sim(joint_pos, joint_vel)
         if verbose:
-            print(f"[SYNC] LEFT: {[f'{j:.3f}' for j in left_joints[:3]]}...")
+            print(f"[SYNC] LEFT (alpha={alpha}): {[f'{j:.3f}' for j in left_joints[:3]]}...")
 
     # Update right arm
     if right_joints is not None:
         joint_pos = right_arm.data.joint_pos.clone()
         joint_vel = right_arm.data.joint_vel.clone()
+        # Blend sim position toward real position
         for i in range(min(6, len(right_joints))):
-            joint_pos[0, i] = right_joints[i]
+            sim_pos = float(joint_pos[0, i])
+            real_pos = right_joints[i]
+            joint_pos[0, i] = (1 - alpha) * sim_pos + alpha * real_pos
         right_arm.write_joint_state_to_sim(joint_pos, joint_vel)
         if verbose:
-            print(f"[SYNC] RIGHT: {[f'{j:.3f}' for j in right_joints[:3]]}...")
+            print(f"[SYNC] RIGHT (alpha={alpha}): {[f'{j:.3f}' for j in right_joints[:3]]}...")
 
     # Force forward kinematics update so body poses (EE positions) reflect synced joints
     # This is critical: without this, _compute_frame_pose() in RMPFlow reads stale data
@@ -851,8 +858,25 @@ def main() -> None:
         print(f"[ZMQ] Publishing joint states on port {args_cli.zmq_port}")
         print("[INFO] Start the dual_ur5e_controller_standalone.py on the robot control PC")
 
-    sync_counter = 0
-    SYNC_EVERY_N_FRAMES = 240
+    # ==========================================================================
+    # DRIFT CORRECTION CONFIGURATION
+    # ==========================================================================
+    # Set to True for soft correction (every frame, gentle blend)
+    # Set to False for hard sync (every N frames, full overwrite)
+    USE_SOFT_CORRECTION = True
+
+    # Soft correction settings (used when USE_SOFT_CORRECTION = True)
+    SOFT_CORRECTION_ALPHA = 0.04  # Blend factor: 0.01 = very gentle, 0.05 = more aggressive
+
+    # Hard sync settings (used when USE_SOFT_CORRECTION = False)
+    HARD_SYNC_EVERY_N_FRAMES = 60  # Sync every N frames (~2x per second at 120Hz)
+    hard_sync_counter = 0
+    # ==========================================================================
+
+    if USE_SOFT_CORRECTION:
+        print(f"[DRIFT] Using SOFT CORRECTION (alpha={SOFT_CORRECTION_ALPHA}, every frame)")
+    else:
+        print(f"[DRIFT] Using HARD SYNC (every {HARD_SYNC_EVERY_N_FRAMES} frames)")
 
     # simulate environment
     try:
@@ -865,18 +889,22 @@ def main() -> None:
 
                     # Only apply teleop commands when active
                     if teleoperation_active:
-                        sync_counter += 1
-                        if sync_counter >= SYNC_EVERY_N_FRAMES:
-                            # Sync simulation to real robot state BEFORE computing RMPFlow
-                            # This prevents drift between sim and real robot
-                            if real_robot_feedback is not None:
-                                sync_sim_to_real_robot(env, real_robot_feedback)
-                                sync_counter=0
-
                         # process actions
                         actions = action.repeat(env.num_envs, 1)
-                        # apply actions
+                        # apply actions - let sim run freely first
                         env.step(actions)
+
+                        # Apply drift correction AFTER env.step()
+                        if real_robot_feedback is not None:
+                            if USE_SOFT_CORRECTION:
+                                # Soft correction: gentle blend every frame
+                                sync_sim_to_real_robot(env, real_robot_feedback, alpha=SOFT_CORRECTION_ALPHA)
+                            else:
+                                # Hard sync: full overwrite every N frames
+                                hard_sync_counter += 1
+                                if hard_sync_counter >= HARD_SYNC_EVERY_N_FRAMES:
+                                    sync_sim_to_real_robot(env, real_robot_feedback, alpha=1.0)
+                                    hard_sync_counter = 0
                     else:
                         env.sim.render()
 
