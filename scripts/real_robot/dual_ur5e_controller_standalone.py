@@ -14,7 +14,6 @@ This is a STANDALONE version with no external dependencies beyond:
 - ur_rtde (pip install ur_rtde)
 - pyzmq (pip install pyzmq)
 - numpy
-- pyyaml (optional, for config file)
 
 The controller:
 1. Connects to both UR5e robots via RTDE
@@ -36,18 +35,9 @@ import socket
 import sys
 import threading
 import time
-from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 import numpy as np
-
-# Try to import YAML (optional - graceful fallback if not available)
-try:
-    import yaml
-    YAML_AVAILABLE = True
-except ImportError:
-    YAML_AVAILABLE = False
-    print("[INFO] PyYAML not installed. Using default gripper settings.")
 
 # Try to import ZMQ
 try:
@@ -89,12 +79,12 @@ SERVO_GAIN = 1000          # [100, 2000]
 # Velocity Limits (rad/s) - conservative values (70% of UR5e max)
 # UR5e max: base/shoulder/elbow = 3.14 rad/s, wrist = 6.28 rad/s
 MAX_JOINT_VELOCITY = np.array([
-    2.2,   # Base (max 3.14)
-    2.2,   # Shoulder (max 3.14)
-    2.2,   # Elbow (max 3.14)
-    4.4,   # Wrist 1 (max 6.28)
-    4.4,   # Wrist 2 (max 6.28)
-    4.4,   # Wrist 3 (max 6.28)
+    3.14,   # Base (max 3.14)
+    3.14,   # Shoulder (max 3.14)
+    3.14,   # Elbow (max 3.14)
+    6.28,   # Wrist 1 (max 6.28)
+    6.28,   # Wrist 2 (max 6.28)
+    6.28,   # Wrist 3 (max 6.28)
 ])
 
 # Watchdog Configuration
@@ -102,12 +92,9 @@ WATCHDOG_ENABLED = True
 WATCHDOG_THRESHOLD = 0.1   # radians (~5.7 degrees)
 WATCHDOG_WINDOW = 50       # samples
 
-# Gripper Force/Current Control Configuration
-GRIPPER_CONFIG_DIR = "config"  # Relative to script location
-GRASP_OBJECTS_FILE = "grasp_objects.yaml"
-GRIPPER_SESSION_FILE = "gripper_session.yaml"
-DEFAULT_GRIPPER_FORCE = 150
-DEFAULT_GRIPPER_SPEED = 100
+# Gripper Control Configuration
+GRIPPER_SPEED = 150
+DEFAULT_GRIPPER_FORCE = 150  # Fallback if ZMQ message lacks force
 CURRENT_MONITOR_ENABLED = True
 CURRENT_POLL_INTERVAL = 0.05  # 20Hz current monitoring during close
 CURRENT_MONITOR_TIMEOUT = 3.0  # Max seconds to monitor current during close
@@ -158,129 +145,6 @@ class PositionWatchdog:
 
 
 # =============================================================================
-# Gripper Configuration
-# =============================================================================
-
-class GripperConfig:
-    """Manages gripper configuration from YAML files.
-
-    Loads object definitions and session configuration for adaptive gripping.
-    Provides graceful fallback to defaults if YAML files are missing.
-    """
-
-    def __init__(self, config_dir: Optional[Path] = None):
-        """Initialize gripper configuration.
-
-        Args:
-            config_dir: Path to config directory containing YAML files.
-                       If None, uses default location relative to script.
-        """
-        self.objects: Dict[str, dict] = {}
-        self.default_params = {
-            "current_threshold": None,
-            "force": DEFAULT_GRIPPER_FORCE,
-            "speed": DEFAULT_GRIPPER_SPEED,
-        }
-        self.left_object: Optional[str] = None
-        self.right_object: Optional[str] = None
-
-        if config_dir is None:
-            script_dir = Path(__file__).parent
-            config_dir = script_dir / GRIPPER_CONFIG_DIR
-
-        self._load_configs(config_dir)
-
-    def _load_configs(self, config_dir: Path):
-        """Load configuration from YAML files."""
-        if not YAML_AVAILABLE:
-            print("[GRIPPER CONFIG] YAML not available, using defaults")
-            return
-
-        # Load object definitions
-        objects_file = config_dir / GRASP_OBJECTS_FILE
-        if objects_file.exists():
-            try:
-                with open(objects_file, "r") as f:
-                    data = yaml.safe_load(f)
-                    if data and "objects" in data:
-                        self.objects = data["objects"]
-                        print(f"[GRIPPER CONFIG] Loaded {len(self.objects)} object definitions")
-                    if data and "default" in data:
-                        self.default_params.update(data["default"])
-            except Exception as e:
-                print(f"[GRIPPER CONFIG] Error loading {objects_file}: {e}")
-        else:
-            print(f"[GRIPPER CONFIG] Objects file not found: {objects_file}")
-            print("[GRIPPER CONFIG] Using default parameters")
-
-        # Load session configuration
-        session_file = config_dir / GRIPPER_SESSION_FILE
-        if session_file.exists():
-            try:
-                with open(session_file, "r") as f:
-                    data = yaml.safe_load(f)
-                    if data:
-                        if "left_gripper" in data and data["left_gripper"]:
-                            self.left_object = data["left_gripper"].get("object")
-                        if "right_gripper" in data and data["right_gripper"]:
-                            self.right_object = data["right_gripper"].get("object")
-                print(f"[GRIPPER CONFIG] Session: left={self.left_object}, right={self.right_object}")
-            except Exception as e:
-                print(f"[GRIPPER CONFIG] Error loading {session_file}: {e}")
-        else:
-            print(f"[GRIPPER CONFIG] Session file not found: {session_file}")
-
-    def get_params(self, object_name: Optional[str]) -> dict:
-        """Get grip parameters for an object.
-
-        Args:
-            object_name: Name of object from grasp_objects.yaml
-
-        Returns:
-            Dict with current_threshold, force, and speed
-        """
-        if object_name is None:
-            return self.default_params.copy()
-
-        if object_name in self.objects:
-            params = self.default_params.copy()
-            params.update(self.objects[object_name])
-            return params
-        else:
-            print(f"[GRIPPER CONFIG] WARNING: Object '{object_name}' not found, using defaults")
-            return self.default_params.copy()
-
-    def print_summary(self):
-        """Print configuration summary."""
-        print("=" * 50)
-        print("Gripper Configuration Summary")
-        print("=" * 50)
-
-        left_params = self.get_params(self.left_object)
-        right_params = self.get_params(self.right_object)
-
-        print(f"LEFT gripper:")
-        print(f"  Object: {self.left_object or 'default'}")
-        print(f"  Force:  {left_params['force']}/255")
-        print(f"  Speed:  {left_params['speed']}/255")
-        if left_params['current_threshold']:
-            print(f"  Current threshold: {left_params['current_threshold']}A")
-        else:
-            print(f"  Current threshold: None (full grip)")
-
-        print(f"RIGHT gripper:")
-        print(f"  Object: {self.right_object or 'default'}")
-        print(f"  Force:  {right_params['force']}/255")
-        print(f"  Speed:  {right_params['speed']}/255")
-        if right_params['current_threshold']:
-            print(f"  Current threshold: {right_params['current_threshold']}A")
-        else:
-            print(f"  Current threshold: None (full grip)")
-
-        print("=" * 50)
-
-
-# =============================================================================
 # Main Controller Class
 # =============================================================================
 
@@ -293,8 +157,6 @@ class DualUR5eController:
         right_ip: str = RIGHT_ARM_IP,
         isaac_ip: str = ISAAC_PC_IP,
         zmq_port: int = ZMQ_PORT,
-        left_object: Optional[str] = None,
-        right_object: Optional[str] = None,
         current_monitor: bool = CURRENT_MONITOR_ENABLED,
     ):
         """Initialize the dual arm controller.
@@ -304,8 +166,6 @@ class DualUR5eController:
             right_ip: IP address of right UR5e arm
             isaac_ip: IP address of PC running Isaac Lab
             zmq_port: ZMQ port to connect to
-            left_object: Object type for left gripper (overrides session yaml)
-            right_object: Object type for right gripper (overrides session yaml)
             current_monitor: Enable current-based grip stopping
         """
         self.left_ip = left_ip
@@ -321,8 +181,12 @@ class DualUR5eController:
         self.latest_data = {
             "left_joints": None,
             "right_joints": None,
-            "left_gripper": 0.0,
-            "right_gripper": 0.0,
+            "left_gripper": 0,
+            "right_gripper": 0,
+            "left_gripper_force": DEFAULT_GRIPPER_FORCE,
+            "right_gripper_force": DEFAULT_GRIPPER_FORCE,
+            "left_current_limit": None,
+            "right_current_limit": None,
             "timestamp": 0.0,
             "updated": False,
             "active": False,  # CRITICAL: Only move when this is True (SQUEEZE pressed)
@@ -349,18 +213,6 @@ class DualUR5eController:
         # Watchdogs
         self.left_watchdog = PositionWatchdog(WATCHDOG_THRESHOLD, WATCHDOG_WINDOW) if WATCHDOG_ENABLED else None
         self.right_watchdog = PositionWatchdog(WATCHDOG_THRESHOLD, WATCHDOG_WINDOW) if WATCHDOG_ENABLED else None
-
-        # Gripper configuration
-        self.gripper_config = GripperConfig()
-        # CLI overrides take precedence over session yaml
-        if left_object:
-            self.gripper_config.left_object = left_object
-        if right_object:
-            self.gripper_config.right_object = right_object
-
-        # Get grip parameters for each gripper
-        self.left_grip_params = self.gripper_config.get_params(self.gripper_config.left_object)
-        self.right_grip_params = self.gripper_config.get_params(self.gripper_config.right_object)
 
         # Track gripper state for current monitoring
         self.left_gripper_closing = False
@@ -518,7 +370,7 @@ class DualUR5eController:
         self._send_gripper_cmd(sock, "SET GTO 1")
 
         start_time = time.time()
-        initial_target = target_pos / 255.0  # Normalized target we started with
+        initial_target = target_pos  # Already 0-255 int
 
         while time.time() - start_time < CURRENT_MONITOR_TIMEOUT:
             # Check if user wants to change gripper position (e.g., open)
@@ -526,8 +378,8 @@ class DualUR5eController:
                 current_target = self.latest_data[gripper_key]
 
             # If target changed significantly (user wants to open or different position)
-            if abs(current_target - initial_target) > 0.05:
-                print(f"[GRIPPER] {name} monitoring interrupted - target changed to {current_target:.2f}")
+            if abs(current_target - initial_target) > 13:
+                print(f"[GRIPPER] {name} monitoring interrupted - target changed to {current_target}")
                 return False  # Exit and let main loop handle new target
 
             current = self._read_gripper_current(sock)
@@ -551,37 +403,20 @@ class DualUR5eController:
         return False
 
     def initialize_grippers(self):
-        """Configure gripper force and speed based on object type.
-
-        Called once at startup to set grip parameters before teleoperation.
-        """
+        """Configure gripper speed and default force at startup."""
         print("[GRIPPER] Initializing gripper settings...")
 
-        # Left gripper
         if self.left_gripper_sock:
-            params = self.left_grip_params
-            force_resp = self._send_gripper_cmd(self.left_gripper_sock, f"SET FOR {params['force']}")
-            speed_resp = self._send_gripper_cmd(self.left_gripper_sock, f"SET SPE {params['speed']}")
-            # Enable gripper
+            self._send_gripper_cmd(self.left_gripper_sock, f"SET SPE {GRIPPER_SPEED}")
+            self._send_gripper_cmd(self.left_gripper_sock, f"SET FOR {DEFAULT_GRIPPER_FORCE}")
             self._send_gripper_cmd(self.left_gripper_sock, "SET GTO 1")
+            print(f"[GRIPPER] LEFT initialized: speed={GRIPPER_SPEED}, force={DEFAULT_GRIPPER_FORCE}")
 
-            obj_name = self.gripper_config.left_object or "default"
-            threshold_str = f"{params['current_threshold']}A" if params['current_threshold'] else "None"
-            print(f"[GRIPPER] LEFT configured for '{obj_name}': "
-                  f"force={params['force']}, speed={params['speed']}, threshold={threshold_str}")
-
-        # Right gripper
         if self.right_gripper_sock:
-            params = self.right_grip_params
-            force_resp = self._send_gripper_cmd(self.right_gripper_sock, f"SET FOR {params['force']}")
-            speed_resp = self._send_gripper_cmd(self.right_gripper_sock, f"SET SPE {params['speed']}")
-            # Enable gripper
+            self._send_gripper_cmd(self.right_gripper_sock, f"SET SPE {GRIPPER_SPEED}")
+            self._send_gripper_cmd(self.right_gripper_sock, f"SET FOR {DEFAULT_GRIPPER_FORCE}")
             self._send_gripper_cmd(self.right_gripper_sock, "SET GTO 1")
-
-            obj_name = self.gripper_config.right_object or "default"
-            threshold_str = f"{params['current_threshold']}A" if params['current_threshold'] else "None"
-            print(f"[GRIPPER] RIGHT configured for '{obj_name}': "
-                  f"force={params['force']}, speed={params['speed']}, threshold={threshold_str}")
+            print(f"[GRIPPER] RIGHT initialized: speed={GRIPPER_SPEED}, force={DEFAULT_GRIPPER_FORCE}")
 
     def clamp_velocity(
         self, current_pos: np.ndarray, target_pos: np.ndarray
@@ -611,15 +446,19 @@ class DualUR5eController:
                     if isinstance(data, dict):
                         self.latest_data["left_joints"] = data.get("left_arm")
                         self.latest_data["right_joints"] = data.get("right_arm")
-                        self.latest_data["left_gripper"] = data.get("left_gripper", 0.0)
-                        self.latest_data["right_gripper"] = data.get("right_gripper", 0.0)
+                        self.latest_data["left_gripper"] = data.get("left_gripper", 0)
+                        self.latest_data["right_gripper"] = data.get("right_gripper", 0)
+                        self.latest_data["left_gripper_force"] = data.get("left_gripper_force", DEFAULT_GRIPPER_FORCE)
+                        self.latest_data["right_gripper_force"] = data.get("right_gripper_force", DEFAULT_GRIPPER_FORCE)
+                        self.latest_data["left_current_limit"] = data.get("left_current_limit", None)
+                        self.latest_data["right_current_limit"] = data.get("right_current_limit", None)
                         self.latest_data["timestamp"] = data.get("timestamp", time.time())
                         # CRITICAL: Parse active flag - only move when True
                         self.latest_data["active"] = data.get("active", False)
                     else:
                         # Legacy single-arm format (for testing with isaac_sender.py)
                         self.latest_data["left_joints"] = data[:6] if len(data) >= 6 else None
-                        self.latest_data["left_gripper"] = data[6] if len(data) > 6 else 0.0
+                        self.latest_data["left_gripper"] = data[6] if len(data) > 6 else 0
                         self.latest_data["active"] = False  # Legacy format = inactive
 
                     self.latest_data["updated"] = True
@@ -634,19 +473,25 @@ class DualUR5eController:
     def gripper_control_thread(self):
         """Thread for controlling grippers with current-based stopping.
 
-        Runs at ~50Hz. When closing with a current threshold defined,
-        monitors current and stops gripper when threshold is exceeded.
+        Runs at ~50Hz. Gripper values arrive as 0-255 integers from ZMQ.
+        Force and current_limit are read from latest_data (set by teleop side).
         """
-        update_threshold = 0.05  # Only send if change exceeds this
+        update_threshold = 13  # Only send if change exceeds this (~5% of 255)
 
-        last_left_val = -999.0
-        last_right_val = -999.0
+        last_left_val = -999
+        last_right_val = -999
+        last_left_force = DEFAULT_GRIPPER_FORCE
+        last_right_force = DEFAULT_GRIPPER_FORCE
 
         while self.running:
             with self.lock:
                 is_active = self.latest_data["active"]
                 left_target = self.latest_data["left_gripper"]
                 right_target = self.latest_data["right_gripper"]
+                left_force = self.latest_data["left_gripper_force"]
+                right_force = self.latest_data["right_gripper_force"]
+                left_current_limit = self.latest_data["left_current_limit"]
+                right_current_limit = self.latest_data["right_current_limit"]
 
             # CRITICAL: Only control grippers when teleop is ACTIVE
             if not is_active:
@@ -654,62 +499,66 @@ class DualUR5eController:
                 continue
 
             # Left gripper
+            # Update force dynamically if it changed
+            if self.left_gripper_sock and left_force != last_left_force:
+                self._send_gripper_cmd(self.left_gripper_sock, f"SET FOR {left_force}")
+                print(f"[GRIPPER] LEFT force updated to {left_force}")
+                last_left_force = left_force
+
             if self.left_gripper_sock and abs(left_target - last_left_val) > update_threshold:
                 try:
-                    pos_val = int(left_target * 255)
-                    pos_val = max(0, min(255, pos_val))
+                    pos_val = max(0, min(255, int(left_target)))
 
                     is_closing = left_target > last_left_val
-                    threshold = self.left_grip_params.get("current_threshold")
 
-                    if is_closing and threshold and self.current_monitor_enabled:
-                        # Close with current monitoring
+                    if is_closing and left_current_limit and self.current_monitor_enabled:
                         stopped = self._close_with_current_limit(
                             self.left_gripper_sock,
                             pos_val,
-                            threshold,
+                            left_current_limit,
                             "LEFT",
                             "left_gripper"
                         )
                         if not stopped:
-                            print(f"[GRIPPER] LEFT closed to {pos_val} ({left_target:.2f})")
+                            print(f"[GRIPPER] LEFT closed to {pos_val}")
                     else:
-                        # Standard position command (opening or no threshold)
                         self._send_gripper_cmd(self.left_gripper_sock, f"SET POS {pos_val}")
                         self._send_gripper_cmd(self.left_gripper_sock, "SET GTO 1")
                         action = "opening" if left_target < last_left_val else "closing"
-                        print(f"[GRIPPER] LEFT {action} to {pos_val} ({left_target:.2f})")
+                        print(f"[GRIPPER] LEFT {action} to {pos_val}")
 
                     last_left_val = left_target
                 except Exception as e:
                     print(f"[GRIPPER] LEFT error: {e}")
 
             # Right gripper
+            # Update force dynamically if it changed
+            if self.right_gripper_sock and right_force != last_right_force:
+                self._send_gripper_cmd(self.right_gripper_sock, f"SET FOR {right_force}")
+                print(f"[GRIPPER] RIGHT force updated to {right_force}")
+                last_right_force = right_force
+
             if self.right_gripper_sock and abs(right_target - last_right_val) > update_threshold:
                 try:
-                    pos_val = int(right_target * 255)
-                    pos_val = max(0, min(255, pos_val))
+                    pos_val = max(0, min(255, int(right_target)))
 
                     is_closing = right_target > last_right_val
-                    threshold = self.right_grip_params.get("current_threshold")
 
-                    if is_closing and threshold and self.current_monitor_enabled:
-                        # Close with current monitoring
+                    if is_closing and right_current_limit and self.current_monitor_enabled:
                         stopped = self._close_with_current_limit(
                             self.right_gripper_sock,
                             pos_val,
-                            threshold,
+                            right_current_limit,
                             "RIGHT",
                             "right_gripper"
                         )
                         if not stopped:
-                            print(f"[GRIPPER] RIGHT closed to {pos_val} ({right_target:.2f})")
+                            print(f"[GRIPPER] RIGHT closed to {pos_val}")
                     else:
-                        # Standard position command (opening or no threshold)
                         self._send_gripper_cmd(self.right_gripper_sock, f"SET POS {pos_val}")
                         self._send_gripper_cmd(self.right_gripper_sock, "SET GTO 1")
                         action = "opening" if right_target < last_right_val else "closing"
-                        print(f"[GRIPPER] RIGHT {action} to {pos_val} ({right_target:.2f})")
+                        print(f"[GRIPPER] RIGHT {action} to {pos_val}")
 
                     last_right_val = right_target
                 except Exception as e:
@@ -926,9 +775,6 @@ class DualUR5eController:
         print(f"Current mon:   {'Enabled' if self.current_monitor_enabled else 'Disabled'}")
         print("=" * 70)
 
-        # Print gripper configuration summary
-        self.gripper_config.print_summary()
-
         # Connect to robots
         if not self.connect_robots():
             if RTDE_AVAILABLE:
@@ -977,7 +823,7 @@ class DualUR5eController:
                         if self.latest_data["updated"]:
                             print(f"[DEBUG] Left:  {self.latest_data['left_joints']}")
                             print(f"[DEBUG] Right: {self.latest_data['right_joints']}")
-                            print(f"[DEBUG] Grippers: L={self.latest_data['left_gripper']:.2f}, R={self.latest_data['right_gripper']:.2f}")
+                            print(f"[DEBUG] Grippers: L={self.latest_data['left_gripper']}, R={self.latest_data['right_gripper']}")
                             self.latest_data["updated"] = False
                     time.sleep(0.1)
         finally:
@@ -993,28 +839,6 @@ class DualUR5eController:
 def main():
     parser = argparse.ArgumentParser(
         description="Dual UR5e Robot Controller - Receives joint commands via ZMQ and controls robots via RTDE",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Gripper Configuration:
-  The controller loads gripper settings from YAML files in the config/ directory:
-    - grasp_objects.yaml: Defines objects with force, speed, and current thresholds
-    - gripper_session.yaml: Maps each gripper to an object for the current session
-
-  Use --left-object and --right-object to override the session configuration.
-
-Examples:
-  # Use session configuration from YAML files
-  python dual_ur5e_controller_standalone.py
-
-  # Override left gripper to handle an apple (delicate)
-  python dual_ur5e_controller_standalone.py --left-object apple
-
-  # Both grippers handling tools (full grip force)
-  python dual_ur5e_controller_standalone.py --left-object screwdriver --right-object hammer
-
-  # Disable current monitoring (always full close)
-  python dual_ur5e_controller_standalone.py --no-current-monitor
-        """,
     )
     parser.add_argument(
         "--left-ip",
@@ -1041,51 +865,17 @@ Examples:
         help=f"ZMQ port to connect to (default: {ZMQ_PORT})",
     )
     parser.add_argument(
-        "--left-object",
-        type=str,
-        default=None,
-        help="Object type for left gripper (overrides gripper_session.yaml)",
-    )
-    parser.add_argument(
-        "--right-object",
-        type=str,
-        default=None,
-        help="Object type for right gripper (overrides gripper_session.yaml)",
-    )
-    parser.add_argument(
         "--no-current-monitor",
         action="store_true",
         help="Disable current-based grip stopping (always close fully)",
     )
-    parser.add_argument(
-        "--list-objects",
-        action="store_true",
-        help="List available object types and exit",
-    )
     args = parser.parse_args()
-
-    # Handle --list-objects
-    if args.list_objects:
-        config = GripperConfig()
-        print("\nAvailable objects in grasp_objects.yaml:")
-        print("-" * 50)
-        for name, params in sorted(config.objects.items()):
-            threshold = params.get("current_threshold")
-            threshold_str = f"{threshold}A" if threshold else "None (full grip)"
-            force = params.get("force", config.default_params["force"])
-            print(f"  {name:20s} force={force:3d}/255  threshold={threshold_str}")
-        print("-" * 50)
-        print(f"  {'default':20s} force={config.default_params['force']:3d}/255  "
-              f"threshold={'None (full grip)'}")
-        return
 
     controller = DualUR5eController(
         left_ip=args.left_ip,
         right_ip=args.right_ip,
         isaac_ip=args.isaac_ip,
         zmq_port=args.zmq_port,
-        left_object=args.left_object,
-        right_object=args.right_object,
         current_monitor=not args.no_current_monitor,
     )
 

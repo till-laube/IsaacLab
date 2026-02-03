@@ -1,0 +1,11 @@
+# Gripper session configuration
+# force: 0-255 (Robotiq force setting)
+# current_limit: Amps threshold to stop closing (null = full grip)
+
+left_gripper:
+  force: 75
+  current_limit: 0.4
+
+right_gripper:
+  force: 90
+  current_limit: 0.385

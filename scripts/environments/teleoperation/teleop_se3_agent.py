@@ -280,18 +280,26 @@ class RealRobotPublisher:
         self,
         left_joints: list,
         right_joints: list,
-        left_gripper: float,
-        right_gripper: float,
+        left_gripper: int,
+        right_gripper: int,
         teleop_active: bool = False,
+        left_gripper_force: int = 150,
+        right_gripper_force: int = 150,
+        left_current_limit=None,
+        right_current_limit=None,
     ):
         """Publish joint states to the real robot controller.
 
         Args:
             left_joints: Left arm joint positions (6 elements).
             right_joints: Right arm joint positions (6 elements).
-            left_gripper: Left gripper position (0-1).
-            right_gripper: Right gripper position (0-1).
+            left_gripper: Left gripper position (0-255).
+            right_gripper: Right gripper position (0-255).
             teleop_active: Whether teleoperation is currently active (SQUEEZE pressed).
+            left_gripper_force: Left gripper force setting (0-255).
+            right_gripper_force: Right gripper force setting (0-255).
+            left_current_limit: Left gripper current limit in Amps (None = full grip).
+            right_current_limit: Right gripper current limit in Amps (None = full grip).
         """
         if not self.connected or self.socket is None:
             return
@@ -303,6 +311,10 @@ class RealRobotPublisher:
             "right_arm": right_joints,
             "left_gripper": left_gripper,
             "right_gripper": right_gripper,
+            "left_gripper_force": left_gripper_force,
+            "right_gripper_force": right_gripper_force,
+            "left_current_limit": left_current_limit,
+            "right_current_limit": right_current_limit,
         }
 
         try:
@@ -438,15 +450,50 @@ def get_joint_positions_from_env(env) -> tuple:
     left_arm_joints = left_pos[:6].tolist()
     right_arm_joints = right_pos[:6].tolist()
 
-    # Gripper: finger_joint position, convert to 0-1 range (0.7 rad = fully closed)
-    left_gripper = float(left_pos[6]) / 0.7 if len(left_pos) > 6 else 0.0
-    right_gripper = float(right_pos[6]) / 0.7 if len(right_pos) > 6 else 0.0
+    # Gripper: finger_joint position, convert to 0-255 int range (0.7 rad = fully closed)
+    left_gripper = int(float(left_pos[6]) / 0.7 * 255) if len(left_pos) > 6 else 0
+    right_gripper = int(float(right_pos[6]) / 0.7 * 255) if len(right_pos) > 6 else 0
 
     # Clamp gripper values
-    left_gripper = max(0.0, min(1.0, left_gripper))
-    right_gripper = max(0.0, min(1.0, right_gripper))
+    left_gripper = max(0, min(255, left_gripper))
+    right_gripper = max(0, min(255, right_gripper))
 
     return left_arm_joints, right_arm_joints, left_gripper, right_gripper
+
+
+def load_gripper_session_config() -> dict:
+    """Load gripper session configuration from YAML file.
+
+    Looks for config/gripper_session.yaml relative to this script's directory.
+
+    Returns:
+        Dict with left_force, right_force, left_current_limit, right_current_limit.
+    """
+    import os
+    defaults = {
+        "left_force": 150,
+        "right_force": 150,
+        "left_current_limit": None,
+        "right_current_limit": None,
+    }
+
+    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config", "gripper_session.yaml")
+    try:
+        import yaml
+        with open(config_path, "r") as f:
+            data = yaml.safe_load(f)
+        if data:
+            left = data.get("left_gripper", {}) or {}
+            right = data.get("right_gripper", {}) or {}
+            defaults["left_force"] = left.get("force", 150)
+            defaults["right_force"] = right.get("force", 150)
+            defaults["left_current_limit"] = left.get("current_limit", None)
+            defaults["right_current_limit"] = right.get("current_limit", None)
+        print(f"[GRIPPER CONFIG] Loaded from {config_path}: {defaults}")
+    except Exception as e:
+        print(f"[GRIPPER CONFIG] Could not load {config_path}: {e}, using defaults")
+
+    return defaults
 
 
 def set_robot_joint_positions(env, left_joints: list = None, right_joints: list = None,
@@ -670,11 +717,13 @@ def main() -> None:
 
     # Initialize ZMQ publisher for real robot control
     zmq_publisher = None
+    gripper_session_cfg = None
     if args_cli.real_robot:
         zmq_publisher = RealRobotPublisher(port=args_cli.zmq_port)
         if not zmq_publisher.connect():
             logger.warning("[ZMQ] Publisher failed to start, continuing without real robot control")
             zmq_publisher = None
+        gripper_session_cfg = load_gripper_session_config()
 
     # Initialize RTDE feedback for continuous sim-to-real synchronization
     real_robot_feedback = None
@@ -917,7 +966,11 @@ def main() -> None:
                             left_joints, right_joints, left_grip, right_grip = get_joint_positions_from_env(env)
                             zmq_publisher.publish(
                                 left_joints, right_joints, left_grip, right_grip,
-                                teleop_active=teleoperation_active
+                                teleop_active=teleoperation_active,
+                                left_gripper_force=gripper_session_cfg["left_force"],
+                                right_gripper_force=gripper_session_cfg["right_force"],
+                                left_current_limit=gripper_session_cfg["left_current_limit"],
+                                right_current_limit=gripper_session_cfg["right_current_limit"],
                             )
                         except Exception as e:
                             logger.debug(f"[ZMQ] Failed to get/publish joint positions: {e}")
