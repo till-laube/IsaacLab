@@ -745,11 +745,15 @@ def main() -> None:
         Reset the environment to its initial state.
 
         Sets a flag to reset the environment on the next simulation step.
+        NOTE: Disabled when --real-robot is set to prevent dangerous instantaneous movement of real robot arms
 
         Returns:
             None
         """
         nonlocal should_reset_recording_instance
+        if args_cli.real_robot:
+            print("[RESET] Reset DISABLED when --real-robot is set to avoid sudden instantaneous movement of robot arms)")
+            return
         should_reset_recording_instance = True
         print("Reset triggered - Environment will reset on next step")
 
