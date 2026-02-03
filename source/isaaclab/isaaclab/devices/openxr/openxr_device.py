@@ -145,13 +145,16 @@ class OpenXRDevice(DeviceBase):
                 logger.warning(f"XR: Failed to initialize anchor synchronizer: {e}")
 
         # Default convenience binding: toggle anchor rotation with right controller 'a' button
-        with contextlib.suppress(Exception):
-            self._bind_button_press(
-                "/user/hand/right",
-                "a",
-                "isaaclab_right_a",
-                lambda ev: self._toggle_anchor_rotation(),
-            )
+        # Skip for Vive controllers which don't have an 'a' button
+        has_vive_retargeter = any("Vive" in type(r).__name__ for r in self._retargeters)
+        if not has_vive_retargeter:
+            with contextlib.suppress(Exception):
+                self._bind_button_press(
+                    "/user/hand/right",
+                    "a",
+                    "isaaclab_right_a",
+                    lambda ev: self._toggle_anchor_rotation(),
+                )
 
     def __del__(self):
         """Clean up resources when the object is destroyed.
