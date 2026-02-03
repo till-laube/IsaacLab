@@ -1,5 +1,5 @@
-asset_path: /home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/wooden_plate.stl
-usd_dir: /home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup
+asset_path: ./wooden_plate.stl
+usd_dir: .
 usd_file_name: wooden_plate.usd
 force_usd_conversion: true
 make_instanceable: false

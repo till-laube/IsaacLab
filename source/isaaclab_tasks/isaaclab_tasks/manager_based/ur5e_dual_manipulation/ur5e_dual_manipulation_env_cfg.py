@@ -73,6 +73,13 @@ _CUSTOM_RMPFLOW_DIR = os.path.join(
     "isaaclab_assets", "data", "ur5e_dual_setup", "rmpflow"
 )
 
+# Path to custom asset data directory for UR5e dual setup
+_ASSET_DATA_DIR = os.path.join(
+    os.path.dirname(__file__),
+    "..", "..", "..", "..",
+    "isaaclab_assets", "data", "ur5e_dual_setup"
+)
+
 UR5E_RMPFLOW_CFG = RmpFlowControllerCfg(
     config_file=os.path.join(_CUSTOM_RMPFLOW_DIR, "ur5e_robotiq140_rmpflow_config.yaml"),
     urdf_file=_CUSTOM_URDF_PATH,  # Using custom URDF with Robotiq gripper and tcp_link
@@ -117,7 +124,7 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
     metal_frame = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/MetalFrame",
         spawn=sim_utils.UsdFileCfg(
-            usd_path="/home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/metal_frame.usd",
+            usd_path=os.path.join(_ASSET_DATA_DIR, "metal_frame.usd"),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=True,
                 kinematic_enabled=True,  # Frame is static
@@ -138,7 +145,7 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
     wooden_plate = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/WoodenPlate",
         spawn=sim_utils.UsdFileCfg(
-            usd_path="/home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/wooden_plate.usd",
+            usd_path=os.path.join(_ASSET_DATA_DIR, "wooden_plate.usd"),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=True,
                 kinematic_enabled=True,  # Table is static
@@ -158,7 +165,7 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
     left_arm: ArticulationCfg = UR5E_ROBOTIQ_140_CFG.replace(
         prim_path="{ENV_REGEX_NS}/LeftArm",
         spawn=sim_utils.UsdFileCfg(
-            usd_path="/home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/ur5e_robotiq_2f_140.usd",
+            usd_path=os.path.join(_ASSET_DATA_DIR, "ur5e_robotiq_2f_140.usd"),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=True,
                 max_depenetration_velocity=5.0,
@@ -246,7 +253,7 @@ class Ur5eDualManipulationSceneCfg(InteractiveSceneCfg):
     right_arm: ArticulationCfg = UR5E_ROBOTIQ_140_CFG.replace(
         prim_path="{ENV_REGEX_NS}/RightArm",
         spawn=sim_utils.UsdFileCfg(
-            usd_path="/home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/ur5e_robotiq_2f_140.usd",
+            usd_path=os.path.join(_ASSET_DATA_DIR, "ur5e_robotiq_2f_140.usd"),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=True,
                 max_depenetration_velocity=5.0,

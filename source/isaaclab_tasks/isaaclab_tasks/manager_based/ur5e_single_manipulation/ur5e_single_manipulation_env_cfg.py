@@ -60,6 +60,13 @@ _CUSTOM_RMPFLOW_DIR = os.path.join(
     "isaaclab_assets", "data", "ur5e_dual_setup", "rmpflow"
 )
 
+# Path to custom asset data directory for UR5e dual setup
+_ASSET_DATA_DIR = os.path.join(
+    os.path.dirname(__file__),
+    "..", "..", "..", "..",
+    "isaaclab_assets", "data", "ur5e_dual_setup"
+)
+
 UR5E_RMPFLOW_CFG = RmpFlowControllerCfg(
     config_file=os.path.join(_CUSTOM_RMPFLOW_DIR, "ur5e_robotiq140_rmpflow_config.yaml"),
     urdf_file=_CUSTOM_URDF_PATH,  # Using custom URDF with Robotiq gripper and tcp_link
@@ -111,7 +118,7 @@ class Ur5eSingleManipulationSceneCfg(InteractiveSceneCfg):
     robot = ArticulationCfg(
         prim_path="{ENV_REGEX_NS}/Robot",
         spawn=sim_utils.UsdFileCfg(
-            usd_path="/home/till/IsaacLab/source/isaaclab_assets/data/ur5e_dual_setup/ur5e_robotiq_2f_140.usd",
+            usd_path=os.path.join(_ASSET_DATA_DIR, "ur5e_robotiq_2f_140.usd"),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=True,
                 max_depenetration_velocity=5.0,
