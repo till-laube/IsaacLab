@@ -701,7 +701,7 @@ class Ur5eDualManipulationEnvCfg(ManagerBasedRLEnvCfg):
                 "vive": OpenXRDeviceCfg(
                     retargeters=[
                         ViveControllerDualArmRetargeterCfg(
-                            pos_sensitivity=20.0,  # Position movement sensitivity (matches single arm)
+                            pos_sensitivity=10.0,  # Position movement sensitivity (matches single arm)
                             rot_sensitivity=20.0,  # Rotation sensitivity
                             trigger_threshold=0.5,  # Trigger threshold for gripper close
                             # Arm base rotations for coordinate transformation (world frame to arm base frame)
