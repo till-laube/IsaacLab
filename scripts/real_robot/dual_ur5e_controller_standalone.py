@@ -483,6 +483,12 @@ class DualUR5eController:
         last_left_force = DEFAULT_GRIPPER_FORCE
         last_right_force = DEFAULT_GRIPPER_FORCE
 
+        # Track if gripper was recently open - only monitor current on first close after open
+        # This allows grip detection for any object size while staying responsive to open commands
+        left_ready_to_grip = True
+        right_ready_to_grip = True
+        OPEN_THRESHOLD = 50  # Consider gripper "open" below this value
+
         while self.running:
             with self.lock:
                 is_active = self.latest_data["active"]
@@ -505,13 +511,24 @@ class DualUR5eController:
                 print(f"[GRIPPER] LEFT force updated to {left_force}")
                 last_left_force = left_force
 
+            # Reset grip-ready state when gripper opens
+            if left_target < OPEN_THRESHOLD:
+                left_ready_to_grip = True
+
             if self.left_gripper_sock and abs(left_target - last_left_val) > update_threshold:
                 try:
                     pos_val = max(0, min(255, int(left_target)))
 
                     is_closing = left_target > last_left_val
 
-                    if is_closing and left_current_limit and self.current_monitor_enabled:
+                    # Only use current monitoring when:
+                    # 1. Closing (target > last)
+                    # 2. Gripper was recently open (ready to grip)
+                    # 3. Current limit is set
+                    # This allows grip detection for ANY object size while staying responsive
+                    should_monitor = is_closing and left_ready_to_grip and left_current_limit and self.current_monitor_enabled
+
+                    if should_monitor:
                         stopped = self._close_with_current_limit(
                             self.left_gripper_sock,
                             pos_val,
@@ -519,15 +536,26 @@ class DualUR5eController:
                             "LEFT",
                             "left_gripper"
                         )
-                        if not stopped:
-                            print(f"[GRIPPER] LEFT closed to {pos_val}")
+                        if stopped:
+                            # Grip detected - don't re-monitor until gripper opens again
+                            left_ready_to_grip = False
+                            print(f"[GRIPPER] LEFT gripped (monitoring disabled until reopen)")
+                            last_left_val = left_target
+                        else:
+                            # Monitoring was interrupted - immediately send current target
+                            with self.lock:
+                                current_target = self.latest_data["left_gripper"]
+                            new_pos = max(0, min(255, int(current_target)))
+                            self._send_gripper_cmd(self.left_gripper_sock, f"SET POS {new_pos}")
+                            self._send_gripper_cmd(self.left_gripper_sock, "SET GTO 1")
+                            print(f"[GRIPPER] LEFT immediate move to {new_pos}")
+                            last_left_val = current_target
                     else:
                         self._send_gripper_cmd(self.left_gripper_sock, f"SET POS {pos_val}")
                         self._send_gripper_cmd(self.left_gripper_sock, "SET GTO 1")
                         action = "opening" if left_target < last_left_val else "closing"
                         print(f"[GRIPPER] LEFT {action} to {pos_val}")
-
-                    last_left_val = left_target
+                        last_left_val = left_target
                 except Exception as e:
                     print(f"[GRIPPER] LEFT error: {e}")
 
@@ -538,13 +566,24 @@ class DualUR5eController:
                 print(f"[GRIPPER] RIGHT force updated to {right_force}")
                 last_right_force = right_force
 
+            # Reset grip-ready state when gripper opens
+            if right_target < OPEN_THRESHOLD:
+                right_ready_to_grip = True
+
             if self.right_gripper_sock and abs(right_target - last_right_val) > update_threshold:
                 try:
                     pos_val = max(0, min(255, int(right_target)))
 
                     is_closing = right_target > last_right_val
 
-                    if is_closing and right_current_limit and self.current_monitor_enabled:
+                    # Only use current monitoring when:
+                    # 1. Closing (target > last)
+                    # 2. Gripper was recently open (ready to grip)
+                    # 3. Current limit is set
+                    # This allows grip detection for ANY object size while staying responsive
+                    should_monitor = is_closing and right_ready_to_grip and right_current_limit and self.current_monitor_enabled
+
+                    if should_monitor:
                         stopped = self._close_with_current_limit(
                             self.right_gripper_sock,
                             pos_val,
@@ -552,15 +591,26 @@ class DualUR5eController:
                             "RIGHT",
                             "right_gripper"
                         )
-                        if not stopped:
-                            print(f"[GRIPPER] RIGHT closed to {pos_val}")
+                        if stopped:
+                            # Grip detected - don't re-monitor until gripper opens again
+                            right_ready_to_grip = False
+                            print(f"[GRIPPER] RIGHT gripped (monitoring disabled until reopen)")
+                            last_right_val = right_target
+                        else:
+                            # Monitoring was interrupted - immediately send current target
+                            with self.lock:
+                                current_target = self.latest_data["right_gripper"]
+                            new_pos = max(0, min(255, int(current_target)))
+                            self._send_gripper_cmd(self.right_gripper_sock, f"SET POS {new_pos}")
+                            self._send_gripper_cmd(self.right_gripper_sock, "SET GTO 1")
+                            print(f"[GRIPPER] RIGHT immediate move to {new_pos}")
+                            last_right_val = current_target
                     else:
                         self._send_gripper_cmd(self.right_gripper_sock, f"SET POS {pos_val}")
                         self._send_gripper_cmd(self.right_gripper_sock, "SET GTO 1")
                         action = "opening" if right_target < last_right_val else "closing"
                         print(f"[GRIPPER] RIGHT {action} to {pos_val}")
-
-                    last_right_val = right_target
+                        last_right_val = right_target
                 except Exception as e:
                     print(f"[GRIPPER] RIGHT error: {e}")
 
