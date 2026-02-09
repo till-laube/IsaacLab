@@ -7,5 +7,5 @@ left_gripper:
   current_limit: 0.4
 
 right_gripper:
-  force: 90
-  current_limit: 0.385
+  force: 140
+  current_limit: 0.7

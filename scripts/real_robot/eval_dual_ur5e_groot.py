@@ -18,20 +18,36 @@ Architecture: Two-rate control loop
   - Gripper thread: 50 Hz gripper commands with deadband
 
 Usage:
-    python eval_dual_ur5e_groot.py --language "pick up the red block"
+    List connected cameras to find serial numbers:
+    python eval_dual_ur5e_groot.py --list-cameras
+
+    Run with camera serial numbers:
+    python eval_dual_ur5e_groot.py \\
+        --front-cam-serial 123456789 \\
+        --left-wrist-cam-serial 987654321 \\
+        --right-wrist-cam-serial 555555555 \\
+        --language "pick up the red block"
 
     With custom IPs:
     python eval_dual_ur5e_groot.py \\
-        --left-ip 100.80.147.160 --right-ip 100.80.147.51 \\
+        --front-cam-serial 123456789 \\
+        --left-wrist-cam-serial 987654321 \\
+        --right-wrist-cam-serial 555555555 \\
+        --left-ip 100.80.147.160 --right-ip 100.80.147.57 \\
         --policy-host 100.80.147.1 --policy-port 5555 \\
         --language "pick up the red block"
 
     Dry run (cameras only, no RTDE):
-    python eval_dual_ur5e_groot.py --dry-run --language "test task"
+    python eval_dual_ur5e_groot.py \\
+        --front-cam-serial 123456789 \\
+        --left-wrist-cam-serial 987654321 \\
+        --right-wrist-cam-serial 555555555 \\
+        --dry-run --language "test task"
 """
 
 import argparse
 import collections
+import os
 import signal
 import socket
 import sys
@@ -51,6 +67,14 @@ except ImportError:
     RTDE_AVAILABLE = False
     print("[WARNING] ur_rtde not installed. Use --dry-run for camera-only mode.")
 
+# RealSense camera (must match collection script backend)
+try:
+    import pyrealsense2 as rs
+    REALSENSE_AVAILABLE = True
+except ImportError:
+    REALSENSE_AVAILABLE = False
+    print("[WARNING] pyrealsense2 not installed. Camera capture will not be available.")
+
 # GR00T policy client
 try:
     from gr00t.policy.server_client import PolicyClient
@@ -64,7 +88,7 @@ except ImportError:
 # =============================================================================
 
 LEFT_ARM_IP = "100.80.147.160"
-RIGHT_ARM_IP = "100.80.147.51"
+RIGHT_ARM_IP = "100.80.147.57"
 GRIPPER_PORT = 63352
 
 # Servo control
@@ -155,73 +179,142 @@ class PositionWatchdog:
 # =============================================================================
 
 class CameraManager:
-    """Manages multiple camera captures with latching on failure."""
+    """Manages multiple RealSense camera captures with latching on failure.
+
+    Uses pyrealsense2 to match the data collection pipeline (integrated_capture.py).
+    Returns BGR frames — same color format saved during data collection.
+    """
 
     def __init__(
         self,
-        front_id: int = 0,
-        left_wrist_id: int = 2,
-        right_wrist_id: int = 4,
+        camera_config: Dict[str, str],
         width: int = 640,
         height: int = 480,
+        fps: int = POLICY_FREQ,
     ):
-        self.cam_ids = {
-            "front": front_id,
-            "left_wrist": left_wrist_id,
-            "right_wrist": right_wrist_id,
-        }
+        """Initialize camera manager.
+
+        Args:
+            camera_config: Dict mapping camera key names to RealSense serial
+                           numbers.  Example: {"front": "123456789",
+                           "wristleft": "987654321", "wristright": "555555555"}
+            width: Capture width.
+            height: Capture height.
+            fps: Capture frame rate.
+        """
+        self.cam_serials = camera_config
         self.width = width
         self.height = height
-        self.caps: Dict[str, cv2.VideoCapture] = {}
+        self.fps = fps
+        self.pipelines: Dict[str, rs.pipeline] = {}
+        self.aligns: Dict[str, rs.align] = {}
         self._last_frames: Dict[str, np.ndarray] = {}
+        self._opened_successfully: Dict[str, bool] = {}
+
+    @staticmethod
+    def discover_cameras() -> List[str]:
+        """Find all connected RealSense cameras, return serial numbers."""
+        ctx = rs.context()
+        devices = ctx.query_devices()
+        serials = []
+        for device in devices:
+            serial = device.get_info(rs.camera_info.serial_number)
+            name = device.get_info(rs.camera_info.name)
+            print(f"[CAMERA] Found: {name} (SN: {serial})")
+            serials.append(serial)
+        return serials
 
     def open(self) -> bool:
         """Open all cameras. Returns True if all opened successfully."""
+        if not REALSENSE_AVAILABLE:
+            print("[CAMERA] ERROR: pyrealsense2 not installed")
+            for name in self.cam_serials:
+                self._opened_successfully[name] = False
+            return False
+
+        discovered = self.discover_cameras()
         all_ok = True
-        for name, cam_id in self.cam_ids.items():
-            cap = cv2.VideoCapture(cam_id)
-            if cap.isOpened():
-                cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
-                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
-                self.caps[name] = cap
-                print(f"[CAMERA] {name} (id={cam_id}) opened: "
-                      f"{int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x"
-                      f"{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}")
-            else:
-                print(f"[CAMERA] WARNING: {name} (id={cam_id}) failed to open")
-                self.caps[name] = cap  # keep handle for retry
+
+        for name, serial in self.cam_serials.items():
+            if serial not in discovered:
+                print(f"[CAMERA] WARNING: {name} (SN: {serial}) not found "
+                      f"among connected cameras")
+                self._opened_successfully[name] = False
                 all_ok = False
+                continue
+
+            try:
+                pipeline = rs.pipeline()
+                config = rs.config()
+                config.enable_device(serial)
+                config.enable_stream(
+                    rs.stream.color, self.width, self.height,
+                    rs.format.bgr8, self.fps,
+                )
+                profile = pipeline.start(config)
+                device = profile.get_device()
+                cam_name = device.get_info(rs.camera_info.name)
+                align = rs.align(rs.stream.color)
+
+                self.pipelines[name] = pipeline
+                self.aligns[name] = align
+                self._opened_successfully[name] = True
+                print(f"[CAMERA] {name} (SN: {serial}) opened: "
+                      f"{cam_name} {self.width}x{self.height}@{self.fps}fps")
+            except Exception as e:
+                print(f"[CAMERA] WARNING: {name} (SN: {serial}) failed: {e}")
+                self._opened_successfully[name] = False
+                all_ok = False
+
         return all_ok
 
-    def capture_all(self) -> Dict[str, np.ndarray]:
-        """Capture frames from all cameras, returning RGB images.
+    def all_cameras_ok(self) -> bool:
+        """Check if all cameras opened successfully."""
+        return all(self._opened_successfully.values())
 
-        Latches the last valid frame if capture fails.
+    def get_failed_cameras(self) -> List[str]:
+        """Return list of camera names that failed to open."""
+        return [name for name, ok in self._opened_successfully.items() if not ok]
+
+    def capture_all(self) -> Dict[str, np.ndarray]:
+        """Capture frames from all cameras, returning BGR images.
+
+        BGR format matches the data collection script so the model sees the
+        same color space it was trained on.  Latches the last valid frame if
+        capture fails.
         """
         frames = {}
-        for name, cap in self.caps.items():
-            ret, frame = cap.read()
-            if ret and frame is not None:
-                # BGR → RGB
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                self._last_frames[name] = frame_rgb
-                frames[name] = frame_rgb
-            elif name in self._last_frames:
-                frames[name] = self._last_frames[name]
-            else:
-                # No frame ever captured — return black
-                frames[name] = np.zeros(
-                    (self.height, self.width, 3), dtype=np.uint8
-                )
+        for name, pipeline in self.pipelines.items():
+            try:
+                rs_frames = pipeline.wait_for_frames(timeout_ms=1000)
+                aligned = self.aligns[name].process(rs_frames)
+                color_frame = aligned.get_color_frame()
+                if color_frame:
+                    frame_bgr = np.asanyarray(color_frame.get_data())
+                    self._last_frames[name] = frame_bgr
+                    frames[name] = frame_bgr
+                elif name in self._last_frames:
+                    frames[name] = self._last_frames[name]
+                else:
+                    frames[name] = np.zeros(
+                        (self.height, self.width, 3), dtype=np.uint8
+                    )
+            except RuntimeError:
+                if name in self._last_frames:
+                    frames[name] = self._last_frames[name]
+                else:
+                    frames[name] = np.zeros(
+                        (self.height, self.width, 3), dtype=np.uint8
+                    )
         return frames
 
     def close(self):
-        for name, cap in self.caps.items():
+        for name, pipeline in self.pipelines.items():
             try:
-                cap.release()
+                pipeline.stop()
             except Exception:
                 pass
-        self.caps.clear()
+        self.pipelines.clear()
         print("[CAMERA] All cameras released")
 
 
@@ -252,8 +345,6 @@ class DualUR5eGR00TAdapter:
         "right_current_limit", # (1,) current threshold in Amps
     ]
 
-    CAMERA_KEYS = ["front", "left_wrist", "right_wrist"]
-
     def __init__(
         self,
         default_gripper_force: int = DEFAULT_GRIPPER_FORCE,
@@ -281,13 +372,15 @@ class DualUR5eGR00TAdapter:
             video.*:    (1, 1, H, W, 3) uint8
             state.*:    (1, 1, D) float32
             language.*: [[str]]
+
+        Camera key names come from the frames dict (set by CameraManager).
         """
         obs = {}
 
         # (1) Video — dict of camera frames (H, W, 3) uint8
+        # Use whatever keys are in frames (configured via CLI)
         obs["video"] = {}
-        for cam_name in self.CAMERA_KEYS:
-            frame = frames.get(cam_name)
+        for cam_name, frame in frames.items():
             if frame is not None:
                 obs["video"][cam_name] = frame.astype(np.uint8)
 
@@ -311,7 +404,7 @@ class DualUR5eGR00TAdapter:
 
         # (3) Language — dict with annotation key
         obs["language"] = {
-            "annotation.human.action.task_description": language,
+            "task": language,
         }
 
         # (4) Add (B=1, T=1) dims by calling recursive_add_extra_dim twice
@@ -620,20 +713,41 @@ class GR00TEvalRunner:
         right_ip: str,
         policy_host: str,
         policy_port: int,
-        front_cam: int,
-        left_wrist_cam: int,
-        right_wrist_cam: int,
+        camera_config: Dict[str, str],
         cam_width: int,
         cam_height: int,
         language: str,
         action_horizon: int,
         use_watchdog: bool = True,
         dry_run: bool = False,
+        record_inference: bool = False,
     ):
+        """Initialize the evaluation runner.
+
+        Args:
+            left_ip: IP address of left UR5e arm.
+            right_ip: IP address of right UR5e arm.
+            policy_host: GR00T policy server host.
+            policy_port: GR00T policy server port.
+            camera_config: Dict mapping camera key names to serial numbers.
+                           Keys must match training data (e.g., "front", "wristleft").
+            cam_width: Camera capture width.
+            cam_height: Camera capture height.
+            language: Task instruction string.
+            action_horizon: Number of actions to execute per policy query.
+            use_watchdog: Enable position divergence watchdog.
+            dry_run: If True, skip hardware connection (camera-only mode).
+            record_inference: If True, record first 10s of camera streams
+                              during inference to inference_recording/.
+        """
         self.language = language
         self.action_horizon = action_horizon
         self.use_watchdog = use_watchdog
         self.dry_run = dry_run
+        self.record_inference = record_inference
+        self.cam_width = cam_width
+        self.cam_height = cam_height
+        self.camera_config = camera_config
 
         self.policy_host = policy_host
         self.policy_port = policy_port
@@ -641,11 +755,9 @@ class GR00TEvalRunner:
         # Hardware
         self.hw = DualUR5eHardwareInterface(left_ip, right_ip) if not dry_run else None
 
-        # Cameras
+        # Cameras — key names must match training data
         self.cameras = CameraManager(
-            front_id=front_cam,
-            left_wrist_id=left_wrist_cam,
-            right_wrist_id=right_wrist_cam,
+            camera_config=camera_config,
             width=cam_width,
             height=cam_height,
         )
@@ -686,15 +798,29 @@ class GR00TEvalRunner:
         self.latest_gripper_left: int = 0
         self.latest_gripper_right: int = 0
 
+        self._record_writers: Dict[str, cv2.VideoWriter] = {}
         self.running = False
 
-    def connect(self):
-        """Initialize hardware, cameras, and policy client."""
-        # Cameras
+    def connect(self, require_cameras: bool = True):
+        """Initialize hardware, cameras, and policy client.
+
+        Args:
+            require_cameras: If True, exit if any camera fails to open.
+                             This prevents robot commands without valid vision.
+        """
+        # Cameras — must succeed before connecting to hardware
         print("[EVAL] Opening cameras...")
         self.cameras.open()
 
-        # Hardware
+        if require_cameras and not self.cameras.all_cameras_ok():
+            failed = self.cameras.get_failed_cameras()
+            print(f"[ERROR] Required cameras failed to open: {failed}")
+            print("[ERROR] Robot connection blocked — fix cameras first.")
+            print("[ERROR] Use --no-require-cameras to override (unsafe).")
+            self.cameras.close()
+            sys.exit(1)
+
+        # Hardware — only connect if cameras are OK (or not required)
         if not self.dry_run:
             if not RTDE_AVAILABLE:
                 print("[ERROR] ur_rtde required for real robot mode. Use --dry-run.")
@@ -715,10 +841,14 @@ class GR00TEvalRunner:
             print(f"[EVAL] LEFT  start: {[f'{j:.3f}' for j in left_j]}")
             print(f"[EVAL] RIGHT start: {[f'{j:.3f}' for j in right_j]}")
 
-            # Read initial gripper positions
+            # Read initial gripper positions and seed targets so the gripper
+            # thread holds current position until the first policy action arrives
             gl, gr = self.hw.read_gripper_positions()
             self.latest_gripper_left = gl
             self.latest_gripper_right = gr
+            with self.lock:
+                self.gripper_target["left_position"] = gl
+                self.gripper_target["right_position"] = gr
         else:
             # Dry-run defaults
             self.left_servo_pos = np.zeros(6)
@@ -770,6 +900,28 @@ class GR00TEvalRunner:
         print(f"[POLICY] Action horizon: {self.action_horizon}")
         print("[POLICY] Press Ctrl+C to stop")
 
+        # Inference recording setup
+        self._record_writers: Dict[str, cv2.VideoWriter] = {}
+        record_max_frames = int(10.0 * POLICY_FREQ)  # 10 seconds
+        record_frame_count = 0
+        if self.record_inference:
+            out_dir = "inference_recording"
+            os.makedirs(out_dir, exist_ok=True)
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            for name, serial in self.camera_config.items():
+                path = os.path.join(out_dir, f"{name}_{serial}.mp4")
+                w = cv2.VideoWriter(
+                    path, fourcc, POLICY_FREQ,
+                    (self.cam_width, self.cam_height),
+                )
+                if w.isOpened():
+                    self._record_writers[name] = w
+                    print(f"[RECORD] Will record {name} -> {path}")
+                else:
+                    print(f"[RECORD] WARNING: Failed to open writer for {path}")
+            print(f"[RECORD] Recording first {record_max_frames} frames "
+                  f"({record_max_frames / POLICY_FREQ:.0f}s) during inference")
+
         loop_count = 0
         last_status_time = time.time()
 
@@ -787,6 +939,19 @@ class GR00TEvalRunner:
 
             # 2. Capture camera frames
             frames = self.cameras.capture_all()
+
+            # Record frames if active
+            if self._record_writers and record_frame_count < record_max_frames:
+                for name, w in self._record_writers.items():
+                    if name in frames:
+                        w.write(frames[name])
+                record_frame_count += 1
+                if record_frame_count >= record_max_frames:
+                    for name, w in self._record_writers.items():
+                        w.release()
+                        print(f"[RECORD] Finished {name} "
+                              f"({record_frame_count} frames)")
+                    self._record_writers.clear()
 
             # 3. Build observation
             with self.lock:
@@ -959,6 +1124,11 @@ class GR00TEvalRunner:
     def stop(self):
         """Graceful shutdown."""
         self.running = False
+        # Release any in-progress inference recording writers
+        for name, w in self._record_writers.items():
+            w.release()
+            print(f"[RECORD] Released {name} (early shutdown)")
+        self._record_writers.clear()
         if self.hw:
             self.hw.stop()
         self.cameras.close()
@@ -987,21 +1157,32 @@ def main():
     parser.add_argument("--policy-port", type=int, default=5555,
                         help="GR00T policy server port")
 
-    # Cameras
-    parser.add_argument("--front-cam", type=int, default=0,
-                        help="Front camera device ID")
-    parser.add_argument("--left-wrist-cam", type=int, default=2,
-                        help="Left wrist camera device ID")
-    parser.add_argument("--right-wrist-cam", type=int, default=4,
-                        help="Right wrist camera device ID")
+    # Cameras — identified by serial number for deterministic assignment
+    parser.add_argument("--front-cam-serial", type=str, default=None,
+                        help="RealSense serial number for the front camera")
+    parser.add_argument("--left-wrist-cam-serial", type=str, default=None,
+                        help="RealSense serial number for the left wrist camera")
+    parser.add_argument("--right-wrist-cam-serial", type=str, default=None,
+                        help="RealSense serial number for the right wrist camera")
+    parser.add_argument("--front-cam-key", type=str, default="front",
+                        help="Key name for front camera (must match training data)")
+    parser.add_argument("--left-wrist-cam-key", type=str, default="wristleft",
+                        help="Key name for left wrist camera (must match training data)")
+    parser.add_argument("--right-wrist-cam-key", type=str, default="wristright",
+                        help="Key name for right wrist camera (must match training data)")
+    parser.add_argument("--list-cameras", action="store_true",
+                        help="List connected RealSense cameras and exit")
+    parser.add_argument("--record-cams", action="store_true",
+                        help="Record 10 seconds from each camera and exit "
+                             "(useful to verify camera-to-key assignment)")
     parser.add_argument("--cam-width", type=int, default=640,
                         help="Camera capture width")
     parser.add_argument("--cam-height", type=int, default=480,
                         help="Camera capture height")
 
     # Task
-    parser.add_argument("--language", type=str, required=True,
-                        help="Natural language task instruction")
+    parser.add_argument("--language", type=str, default=None,
+                        help="Natural language task instruction (required for eval)")
     parser.add_argument("--action-horizon", type=int, default=16,
                         help="Number of action timesteps per policy query")
 
@@ -1010,6 +1191,11 @@ def main():
                         help="Disable position watchdog")
     parser.add_argument("--dry-run", action="store_true",
                         help="Camera-only mode (no RTDE connection)")
+    parser.add_argument("--no-require-cameras", action="store_true",
+                        help="Allow running even if cameras fail to open (unsafe)")
+    parser.add_argument("--record-inference", action="store_true",
+                        help="Record first 10s of each camera during inference "
+                             "to inference_recording/")
 
     args = parser.parse_args()
 
@@ -1025,6 +1211,97 @@ def main():
     signal.signal(signal.SIGINT, shutdown_handler)
     signal.signal(signal.SIGTERM, shutdown_handler)
 
+    # --list-cameras: discover and exit
+    if args.list_cameras:
+        if not REALSENSE_AVAILABLE:
+            print("[ERROR] pyrealsense2 is not installed")
+            sys.exit(1)
+        print("Connected RealSense cameras:")
+        serials = CameraManager.discover_cameras()
+        if not serials:
+            print("  (none found)")
+        print("\nUse these serial numbers with --front-cam-serial, "
+              "--left-wrist-cam-serial, --right-wrist-cam-serial")
+        sys.exit(0)
+
+    # Validate that all camera serials are provided
+    missing = []
+    if args.front_cam_serial is None:
+        missing.append("--front-cam-serial")
+    if args.left_wrist_cam_serial is None:
+        missing.append("--left-wrist-cam-serial")
+    if args.right_wrist_cam_serial is None:
+        missing.append("--right-wrist-cam-serial")
+    if missing:
+        print(f"[ERROR] Missing required camera serial numbers: {', '.join(missing)}")
+        print("  Run with --list-cameras to see connected cameras and their serial numbers.")
+        sys.exit(1)
+
+    # Build camera config dict — key names must match training data
+    camera_config = {
+        args.front_cam_key: args.front_cam_serial,
+        args.left_wrist_cam_key: args.left_wrist_cam_serial,
+        args.right_wrist_cam_key: args.right_wrist_cam_serial,
+    }
+
+    # --record-cams: open cameras, record 10s each, save and exit
+    if args.record_cams:
+        record_duration = 10.0
+        record_fps = POLICY_FREQ
+        cam = CameraManager(
+            camera_config=camera_config,
+            width=args.cam_width,
+            height=args.cam_height,
+            fps=record_fps,
+        )
+        if not cam.open():
+            print("[ERROR] Not all cameras opened — check serial numbers")
+            cam.close()
+            sys.exit(1)
+
+        out_dir = "camera_check"
+        os.makedirs(out_dir, exist_ok=True)
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        writers = {}
+        for name, serial in camera_config.items():
+            path = os.path.join(out_dir, f"{name}_{serial}.mp4")
+            w = cv2.VideoWriter(path, fourcc, record_fps,
+                                (args.cam_width, args.cam_height))
+            if not w.isOpened():
+                print(f"[ERROR] Failed to open VideoWriter for {path}")
+                cam.close()
+                sys.exit(1)
+            writers[name] = (w, path)
+
+        print(f"[RECORD] Recording {record_duration}s from {len(writers)} cameras "
+              f"at {record_fps} fps...")
+        frame_count = 0
+        total_frames = int(record_duration * record_fps)
+        dt = 1.0 / record_fps
+        try:
+            while frame_count < total_frames:
+                t0 = time.time()
+                frames = cam.capture_all()
+                for name, frame in frames.items():
+                    writers[name][0].write(frame)
+                frame_count += 1
+                elapsed = time.time() - t0
+                if elapsed < dt:
+                    time.sleep(dt - elapsed)
+        except KeyboardInterrupt:
+            print("\n[RECORD] Interrupted early")
+        finally:
+            for name, (w, path) in writers.items():
+                w.release()
+                print(f"[RECORD] Saved {name} -> {path}  ({frame_count} frames)")
+            cam.close()
+        sys.exit(0)
+
+    # Validate --language is provided for eval mode
+    if args.language is None:
+        print("[ERROR] --language is required for evaluation mode")
+        sys.exit(1)
+
     # Banner
     print("=" * 70)
     print("GR00T N1.6 Policy Evaluation — Dual UR5e Arms")
@@ -1032,12 +1309,14 @@ def main():
     print(f"LEFT arm IP:     {args.left_ip}")
     print(f"RIGHT arm IP:    {args.right_ip}")
     print(f"Policy server:   {args.policy_host}:{args.policy_port}")
-    print(f"Cameras:         front={args.front_cam}, "
-          f"left_wrist={args.left_wrist_cam}, right_wrist={args.right_wrist_cam}")
+    print(f"Cameras:         {args.front_cam_key}={args.front_cam_serial}, "
+          f"{args.left_wrist_cam_key}={args.left_wrist_cam_serial}, "
+          f"{args.right_wrist_cam_key}={args.right_wrist_cam_serial}")
     print(f"Resolution:      {args.cam_width}x{args.cam_height}")
     print(f"Language:        {args.language}")
     print(f"Action horizon:  {args.action_horizon}")
     print(f"Watchdog:        {'Disabled' if args.no_watchdog else 'Enabled'}")
+    print(f"Require cams:    {not args.no_require_cameras}")
     print(f"Dry run:         {args.dry_run}")
     print("=" * 70)
 
@@ -1046,19 +1325,18 @@ def main():
         right_ip=args.right_ip,
         policy_host=args.policy_host,
         policy_port=args.policy_port,
-        front_cam=args.front_cam,
-        left_wrist_cam=args.left_wrist_cam,
-        right_wrist_cam=args.right_wrist_cam,
+        camera_config=camera_config,
         cam_width=args.cam_width,
         cam_height=args.cam_height,
         language=args.language,
         action_horizon=args.action_horizon,
         use_watchdog=not args.no_watchdog,
         dry_run=args.dry_run,
+        record_inference=args.record_inference,
     )
 
     try:
-        runner.connect()
+        runner.connect(require_cameras=not args.no_require_cameras)
         runner.run()
     except KeyboardInterrupt:
         print("\nInterrupted by user")

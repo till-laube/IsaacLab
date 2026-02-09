@@ -65,8 +65,8 @@ parser.add_argument(
 parser.add_argument(
     "--right-ip",
     type=str,
-    default="100.80.147.51",
-    help="IP address of the right UR5e arm (default: 100.80.147.51).",
+    default="100.80.147.57",
+    help="IP address of the right UR5e arm (default: 100.80.147.57).",
 )
 parser.add_argument(
     "--zmq-port",
